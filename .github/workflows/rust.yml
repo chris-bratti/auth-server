@@ -1,0 +1,68 @@
+name: Cargo Build & Test
+
+on:
+  push:
+  pull_request:
+
+env: 
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    services:
+      redis-server:
+        image: redis:latest
+        ports:
+          - 6379:6379
+        options: --health-cmd "redis-cli ping"
+        
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          path: rec_temp
+          
+      - name: Init env file
+        run: |
+          echo "SMTP_ENCRYPTION_KEY=\"${{ secrets.ENCRYPTION_KEY }}\"" > .env
+          echo "LOG_KEY=\"${{ secrets.ENCRYPTION_KEY }}\"" >> .env
+          echo "AUTH_LEPTOS_URL=http://localhost:3000/" >> .env
+        working-directory: rec_temp
+
+      - name: Install postgres (Linux)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpq-dev postgresql
+          echo "host    all             all             127.0.0.1/32            md5" > sudo tee -a /etc/postgresql/10/main/pg_hba.conf
+          sudo service postgresql restart && sleep 3
+          sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';"
+          sudo service postgresql restart && sleep 3
+          echo "DATABASE_URL=postgres://postgres:postgres@localhost/test" >> $GITHUB_ENV
+          echo "redis://localhost:6379/"
+
+      - name: Install diesel
+        run: cargo install diesel_cli
+        working-directory: rec_temp
+
+      - name: Diesel setup
+        run: diesel setup
+        working-directory: rec_temp
+
+      - name: Diesel migration
+        run: diesel migration run
+        working-directory: rec_temp
+
+      - name: Build 
+        run: cargo build --verbose
+        working-directory: rec_temp
+        
+      - name: Test
+        run: cargo test --verbose --features ssr
+        working-directory: rec_temp
+
+      - name: Clleanup
+        run: |
+          rm -rf .env
+        working-directory: rec_temp

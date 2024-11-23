@@ -1,0 +1,66 @@
+# Example docker-compose for running this project in docker!
+version: '3.3'
+
+services:
+  auth-leptos:
+    image: rhysbratti/auth_leptos:latest
+    container_name: leptos-auth
+    networks:
+      - leptos_network
+    ports:
+      - 3000:3000
+    environment:
+      DATABASE_URL: postgres://${MASTER_USER}:${MASTER_PASS}@leptos_postgres/${DATABASE_NAME}
+      DATABASE_NAME: ${DATABASE_NAME}
+      FROM_EMAIL: ${FROM_EMAIL}
+      SMTP_KEY: "${SMTP_KEY}"
+      TWO_FACTOR_KEY: "${TWO_FACTOR_KEY}"
+      SMTP_ENCRYPTION_KEY: "${SMTP_ENCRYPTION_KEY}"
+      LOG_KEY: "${LOG_KEY}"
+      AUTH_LEPTOS_URL: ${AUTH_LEPTOS_URL}
+      PGPASSWORD: ${MASTER_PASS}
+      REDIS_CONNECTION_STRING: "redis://redis-cache:6379"
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+
+  redis:
+    container_name: redis-cache
+    image: redis:latest
+    networks:
+      - leptos_network
+    ports:
+      - 6379:6379
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  db:
+    image: postgres:16
+    container_name: leptos_postgres
+    networks:
+      - leptos_network
+    restart: always
+    shm_size: 128mb
+    volumes:
+      - ./data:/var/lib/postgresql/data
+    ports:
+      - 5432:5432
+    environment:
+      POSTGRES_USER: "${MASTER_USER}"
+      POSTGRES_PASSWORD: "${MASTER_PASS}"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready", "-d", "db_prod"]
+      interval: 10s
+      timeout: 60s
+      retries: 5
+      start_period: 5s
+
+networks:
+  leptos_network:
