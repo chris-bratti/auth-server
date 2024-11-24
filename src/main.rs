@@ -1,16 +1,15 @@
 use actix_web::cookie::Key;
 use auth_server::{
-    auth::{self, AuthError, LoginCredentials, NewUserData},
-    server::helpers::get_env_variable,
-    AuthRequest, AuthType, ChangePasswordRequest, LoginRequest, SignupRequest,
+    auth::{self},
+    server::auth_functions::get_env_variable,
+    AuthError, AuthRequest, AuthType, ChangePasswordRequest, Enable2FaRequest, LoginRequest,
+    ResetPasswordRequest, SignupRequest, VerifyOtpRequest, VerifyUserRequest,
 };
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::time::Duration;
 
 use actix_web::*;
 
-use actix_identity::{Identity, IdentityMiddleware};
+use actix_identity::IdentityMiddleware;
 use actix_session::{config::PersistentSession, storage::RedisSessionStore, SessionMiddleware};
 
 #[actix_web::main]
@@ -42,6 +41,7 @@ async fn main() -> std::io::Result<()> {
             )
             .service(auth::logout)
             .service(auth::get_user_from_session)
+            .service(auth_request)
     })
     .bind(("127.0.0.1", 8080))?
     .run()
@@ -52,7 +52,7 @@ fn get_secret_key() -> Key {
     return Key::generate();
 }
 
-#[post("/auth_request")]
+#[post("/auth")]
 async fn auth_request(
     auth_payload: web::Json<AuthRequest>,
     request: HttpRequest,
@@ -65,24 +65,47 @@ async fn auth_request(
 
     let AuthRequest { username, data } = auth_payload.into_inner();
 
-    match AuthType::from(request_type) {
+    let response = match AuthType::from(request_type) {
         AuthType::Login => {
             let data: LoginRequest =
                 serde_json::from_value(data).map_err(|_| AuthError::InvalidRequest)?;
-            auth::handle_login(username, data, request).await?;
+            auth::handle_login(username, data, request).await?
         }
         AuthType::Signup => {
             let data: SignupRequest =
                 serde_json::from_value(data).map_err(|_| AuthError::InvalidRequest)?;
-            auth::handle_signup(username, data, request).await?;
+            auth::handle_signup(username, data, request).await?
         }
         AuthType::ChangePassword => {
             let data: ChangePasswordRequest =
                 serde_json::from_value(data).map_err(|_| AuthError::InvalidRequest)?;
-            auth::handle_change_password(username, data).await?;
+            auth::handle_change_password(username, data).await?
         }
-        _ => return Err(AuthError::InvalidRequest),
-    }
+        AuthType::VerifyUser => {
+            let data: VerifyUserRequest =
+                serde_json::from_value(data).map_err(|_| AuthError::InvalidRequest)?;
+            auth::handle_verify_user(username, data).await?
+        }
+        AuthType::ResetPassword => {
+            let data: ResetPasswordRequest =
+                serde_json::from_value(data).map_err(|_| AuthError::InvalidRequest)?;
+            auth::handle_reset_password(username, data).await?
+        }
+        AuthType::RequestPasswordReset => auth::handle_request_password_reset(username).await?,
+        AuthType::VerifyOtp => {
+            let data: VerifyOtpRequest =
+                serde_json::from_value(data).map_err(|_| AuthError::InvalidRequest)?;
+            auth::handle_verify_otp(username, data, request).await?
+        }
+        AuthType::Generate2Fa => auth::handle_generate_2fa(username).await?,
+        AuthType::Enable2Fa => {
+            let data: Enable2FaRequest =
+                serde_json::from_value(data).map_err(|_| AuthError::InvalidRequest)?;
+            auth::handle_enable_2fa(username, data).await?
+        }
+        AuthType::Logout => todo!(),
+        AuthType::Invalid => return Err(AuthError::InvalidRequest),
+    };
 
-    Ok(HttpResponse::Ok().finish())
+    Ok(response)
 }

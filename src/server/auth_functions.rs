@@ -1,0 +1,322 @@
+use core::result::Result::Ok;
+use std::env;
+
+use actix_web::Result;
+use aes_gcm::{
+    aead::{Aead, AeadCore, KeyInit},
+    Aes256Gcm,
+    Key, // Or `Aes128Gcm`
+    Nonce,
+};
+use argon2::{
+    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    Argon2,
+};
+use dotenvy::dotenv;
+
+use crate::smtp::{self, generate_reset_email_body};
+use crate::{db::db_helper::*, AuthError, EncryptionKey};
+use totp_rs::{Algorithm, Secret, TOTP};
+
+use regex::Regex;
+
+pub fn get_env_variable(variable: &str) -> Option<String> {
+    match std::env::var(variable) {
+        Ok(env_variable) => Some(env_variable.trim().to_string()),
+        Err(_) => {
+            dotenv().ok();
+
+            match env::var(variable) {
+                Ok(var_from_file) => Some(var_from_file.trim().to_string()),
+                Err(_) => None,
+            }
+        }
+    }
+}
+
+pub fn get_totp_config(username: &String, token: &String) -> TOTP {
+    TOTP::new(
+        Algorithm::SHA1,
+        6,
+        1,
+        30,
+        Secret::Raw(token.as_bytes().to_vec()).to_bytes().unwrap(),
+        Some("Auth Leptos".to_string()),
+        username.to_string(),
+    )
+    .unwrap()
+}
+
+pub async fn create_2fa_for_user(username: String) -> Result<(String, String), AuthError> {
+    let token = generate_token().await;
+    let totp = get_totp_config(&username, &token);
+    let qr_code = totp.get_qr_base64().expect("Error generating QR code");
+    Ok((qr_code, token))
+}
+
+pub async fn get_totp(username: &String) -> Result<String, AuthError> {
+    let token = get_user_2fa_token(&username)
+        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
+    match token {
+        Some(token) => {
+            let decrypted_token = decrypt_string(token, EncryptionKey::TwoFactorKey)
+                .await
+                .expect("Error decrypting string!");
+            get_totp_config(&username, &decrypted_token)
+                .generate_current()
+                .map_err(|err| AuthError::InternalServerError(err.to_string()))
+        }
+        None => Err(AuthError::TOTPError),
+    }
+}
+
+/// Hash password with Argon2
+pub async fn hash_string(password: String) -> Result<String, argon2::password_hash::Error> {
+    let salt = SaltString::generate(&mut OsRng);
+
+    let argon2 = Argon2::default();
+
+    let password_hash = argon2
+        .hash_password(password.as_bytes(), &salt)?
+        .to_string();
+
+    Ok(password_hash)
+}
+
+/// Verifies password against hash
+pub fn verify_hash(
+    password: &String,
+    password_hash: &String,
+) -> Result<bool, argon2::password_hash::Error> {
+    let parsed_hash = PasswordHash::new(&password_hash)?;
+    Ok(Argon2::default()
+        .verify_password(password.as_bytes(), &parsed_hash)
+        .is_ok())
+}
+
+/// Server side password strength validation
+pub fn check_valid_password(password: &String) -> bool {
+    // Rust's Regex crate does not support Lookahead matching, so have to break criteria into multiple patterns
+    let contains_digit = Regex::new("\\d+").expect("Error parsing regex");
+    let contains_capital = Regex::new("[A-Z]+").expect("Error parsing regex");
+    let contains_special = Regex::new("[!:@#$^;%&?]+").expect("Error parsing regex");
+
+    let valid = contains_digit.is_match(password)
+        && contains_capital.is_match(password)
+        && contains_special.is_match(password);
+
+    valid && password.len() >= 8 && password.len() <= 16
+}
+
+pub async fn generate_token() -> String {
+    use rand::distributions::Alphanumeric;
+    use rand::{thread_rng, Rng};
+
+    let mut rng = thread_rng();
+
+    let generated_token: String = (&mut rng)
+        .sample_iter(Alphanumeric)
+        .take(32)
+        .map(char::from)
+        .collect();
+
+    generated_token
+}
+
+pub fn verify_reset_token(username: &String, reset_token: &String) -> Result<bool, AuthError> {
+    let token_hash =
+        crate::db::db_helper::get_reset_hash(username).map_err(|_| AuthError::InvalidToken)?;
+
+    verify_hash(reset_token, &token_hash).map_err(|_| AuthError::InvalidToken)
+}
+
+pub fn verify_confirmation_token(
+    username: &String,
+    confirmation_token: &String,
+) -> Result<bool, AuthError> {
+    let verification_hash = get_verification_hash(username).map_err(|_| AuthError::InvalidToken)?;
+
+    verify_hash(confirmation_token, &verification_hash).map_err(|_| AuthError::InvalidToken)
+}
+
+pub async fn send_reset_email(username: &String, reset_token: &String) -> Result<(), AuthError> {
+    // TODO: Two DB calls for one transaction is a little gross - will want to slim this down to one call
+
+    let encrypted_email = crate::db::db_helper::get_user_email(&username)
+        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
+
+    let user = crate::db::db_helper::find_user_by_username(&username)
+        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
+
+    let name = user.expect("No user present!").first_name;
+
+    let user_email = decrypt_string(encrypted_email, EncryptionKey::SmtpKey)
+        .await
+        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
+
+    smtp::send_email(
+        &user_email,
+        "Reset Password".to_string(),
+        generate_reset_email_body(reset_token, &name),
+        &name,
+    )
+    .await;
+
+    Ok(())
+}
+
+pub async fn encrypt_string(
+    data: &String,
+    encryption_key: EncryptionKey,
+) -> Result<String, aes_gcm::Error> {
+    let encryption_key = encryption_key.get();
+
+    let key = Key::<Aes256Gcm>::from_slice(&encryption_key.as_bytes());
+
+    let cipher = Aes256Gcm::new(&key);
+    let nonce = Aes256Gcm::generate_nonce(&mut OsRng); // 96-bits; unique per message
+    let ciphertext = cipher.encrypt(&nonce, data.as_bytes())?;
+
+    //let plaintext = cipher.decrypt(&nonce, ciphertext.as_ref())?;
+
+    let mut encrypted_data: Vec<u8> = nonce.to_vec();
+    encrypted_data.extend_from_slice(&ciphertext);
+
+    let output = hex::encode(encrypted_data);
+    Ok(output)
+}
+
+pub async fn decrypt_string(
+    encrypted: String,
+    encryption_key: EncryptionKey,
+) -> Result<String, aes_gcm::Error> {
+    let encryption_key = encryption_key.get();
+
+    let encrypted_data = hex::decode(encrypted).expect("failed to decode hex string into vec");
+
+    let key = Key::<Aes256Gcm>::from_slice(encryption_key.as_bytes());
+
+    // 12 digit nonce is prepended to encrypted data. Split nonce from encrypted email
+    let (nonce_arr, ciphered_data) = encrypted_data.split_at(12);
+    let nonce = Nonce::from_slice(nonce_arr);
+
+    let cipher = Aes256Gcm::new(key);
+
+    let plaintext = cipher
+        .decrypt(nonce, ciphered_data)
+        .expect("failed to decrypt data");
+
+    Ok(String::from_utf8(plaintext).expect("failed to convert vector of bytes to string"))
+}
+
+#[cfg(test)]
+mod test_auth {
+
+    use core::{assert_eq, assert_ne};
+
+    use crate::{check_valid_password, decrypt_string, verify_hash, EncryptionKey};
+
+    use super::{encrypt_string, get_totp_config, hash_string};
+
+    #[tokio::test]
+    async fn test_password_hashing() {
+        let password = "whatALovelyL!ttleP@s$w0rd".to_string();
+
+        let hashed_password = hash_string(password.clone()).await;
+
+        assert!(hashed_password.is_ok());
+
+        let hashed_password = hashed_password.unwrap();
+
+        assert_ne!(password, hashed_password);
+
+        let pass_match = verify_hash(&password, &hashed_password);
+
+        assert!(pass_match.is_ok());
+
+        assert_eq!(pass_match.unwrap(), true);
+    }
+
+    #[tokio::test]
+    async fn test_email_encryption() {
+        let email = String::from("test@test.com");
+        let encrypted_email = encrypt_string(&email, EncryptionKey::SmtpKey)
+            .await
+            .expect("There was an error encrypting");
+
+        assert_ne!(encrypted_email, email);
+
+        let decrypted_email = decrypt_string(encrypted_email, EncryptionKey::SmtpKey)
+            .await
+            .expect("There was an error decrypting");
+
+        assert_eq!(email, decrypted_email);
+    }
+
+    #[tokio::test]
+    async fn test_log_encryption() {
+        let username = String::from("testuser123");
+        let encrypted_username = encrypt_string(&username, EncryptionKey::LoggerKey)
+            .await
+            .expect("There was an error encrypting!");
+
+        assert_ne!(encrypted_username, username);
+
+        let decrypted_username = decrypt_string(encrypted_username, EncryptionKey::LoggerKey)
+            .await
+            .expect("There was an error decrypting!");
+
+        assert_eq!(username, decrypted_username);
+    }
+
+    #[test]
+    fn test_password_validation() {
+        let valid_password = String::from("Password123!");
+
+        assert!(check_valid_password(&valid_password));
+
+        let valid_password = String::from("g00dP@ssw0rd2");
+
+        assert!(check_valid_password(&valid_password));
+
+        let invalid_password = String::from("password2");
+
+        assert!(!check_valid_password(&invalid_password));
+
+        let invalid_password = String::from("Thispasswordislongerthanwhatisallowed222222!!!!!");
+
+        assert!(!check_valid_password(&invalid_password));
+
+        let invalid_password = String::from("$H0rt");
+
+        assert!(!check_valid_password(&invalid_password));
+
+        let invalid_password = String::from("nocapital123!");
+
+        assert!(!check_valid_password(&invalid_password));
+
+        let invalid_password = String::from("noSpecial1112");
+
+        assert!(!check_valid_password(&invalid_password));
+
+        let invalid_password = String::from("noNumbers!!");
+
+        assert!(!check_valid_password(&invalid_password));
+    }
+
+    #[test]
+    fn test_totp() {
+        let token = "TestSecretSuperSecret".to_string();
+        let username = "exampleuser".to_string();
+
+        let totp1 = get_totp_config(&username, &token);
+
+        let totp2 = get_totp_config(&username, &token);
+
+        let otp1 = totp1.generate_current().expect("Error generating OTP");
+
+        let otp2 = totp2.generate_current().expect("Error generating OTP");
+
+        assert_eq!(otp1, otp2);
+    }
+}
