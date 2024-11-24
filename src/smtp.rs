@@ -123,7 +123,7 @@ pub fn generate_welcome_email_body(first_name: &String, verification_token: &Str
     .into_string()
 }
 
-pub async fn send_email(email: &String, subject: String, email_body: String, first_name: &String) {
+pub fn send_email(email: &String, subject: String, email_body: String, first_name: &String) {
     use crate::server::auth_functions::get_env_variable;
 
     let from_email = get_env_variable("FROM_EMAIL").expect("FROM_EMAIL is unset!");

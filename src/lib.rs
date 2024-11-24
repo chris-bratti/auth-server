@@ -145,6 +145,7 @@ pub struct User {
     username: String,
     two_factor: bool,
     verified: bool,
+    encrypted_email: String,
 }
 
 pub enum AuthType {
@@ -168,6 +169,7 @@ impl AuthType {
             "signup" => AuthType::Signup,
             "verify_user" => AuthType::VerifyUser,
             "reset_password" => AuthType::ResetPassword,
+            "request_password_reset" => AuthType::RequestPasswordReset,
             "change_password" => AuthType::ChangePassword,
             "verify_otp" => AuthType::VerifyOtp,
             "generate_2fa" => AuthType::Generate2Fa,
@@ -181,7 +183,7 @@ impl AuthType {
 #[derive(Serialize, Deserialize)]
 pub struct AuthRequest {
     pub username: String,
-    pub data: Value,
+    pub data: Option<Value>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -223,10 +225,40 @@ pub struct VerifyUserRequest {
 #[derive(Serialize, Deserialize)]
 pub struct VerifyOtpRequest {
     otp: String,
+    pending_token: String,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct Enable2FaRequest {
     two_factor_token: String,
     otp: String,
+    pending_token: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Claims {
+    scope: String,
+    exp: i64,
+    sub: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct LoginResponse<'a> {
+    success: bool,
+    message: &'a str,
+    two_factor_enabled: bool,
+    login_token: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ValidateOtpResponse<'a> {
+    success: bool,
+    message: &'a str,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct Generate2FaResponse {
+    qr_code: String,
+    token: String,
+    pending_token: String,
 }

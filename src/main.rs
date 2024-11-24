@@ -67,40 +67,42 @@ async fn auth_request(
 
     let response = match AuthType::from(request_type) {
         AuthType::Login => {
-            let data: LoginRequest =
-                serde_json::from_value(data).map_err(|_| AuthError::InvalidRequest)?;
+            let data: LoginRequest = serde_json::from_value(data.expect("Missing data field"))
+                .map_err(|_| AuthError::InvalidRequest)?;
             auth::handle_login(username, data, request).await?
         }
         AuthType::Signup => {
-            let data: SignupRequest =
-                serde_json::from_value(data).map_err(|_| AuthError::InvalidRequest)?;
+            let data: SignupRequest = serde_json::from_value(data.expect("Missing data field"))
+                .map_err(|_| AuthError::InvalidRequest)?;
             auth::handle_signup(username, data, request).await?
         }
         AuthType::ChangePassword => {
             let data: ChangePasswordRequest =
-                serde_json::from_value(data).map_err(|_| AuthError::InvalidRequest)?;
+                serde_json::from_value(data.expect("Missing data field"))
+                    .map_err(|_| AuthError::InvalidRequest)?;
             auth::handle_change_password(username, data).await?
         }
         AuthType::VerifyUser => {
-            let data: VerifyUserRequest =
-                serde_json::from_value(data).map_err(|_| AuthError::InvalidRequest)?;
+            let data: VerifyUserRequest = serde_json::from_value(data.expect("Missing data field"))
+                .map_err(|_| AuthError::InvalidRequest)?;
             auth::handle_verify_user(username, data).await?
         }
         AuthType::ResetPassword => {
             let data: ResetPasswordRequest =
-                serde_json::from_value(data).map_err(|_| AuthError::InvalidRequest)?;
+                serde_json::from_value(data.expect("Missing data field"))
+                    .map_err(|_| AuthError::InvalidRequest)?;
             auth::handle_reset_password(username, data).await?
         }
         AuthType::RequestPasswordReset => auth::handle_request_password_reset(username).await?,
         AuthType::VerifyOtp => {
-            let data: VerifyOtpRequest =
-                serde_json::from_value(data).map_err(|_| AuthError::InvalidRequest)?;
+            let data: VerifyOtpRequest = serde_json::from_value(data.expect("Missing data field"))
+                .map_err(|_| AuthError::InvalidRequest)?;
             auth::handle_verify_otp(username, data, request).await?
         }
         AuthType::Generate2Fa => auth::handle_generate_2fa(username).await?,
         AuthType::Enable2Fa => {
-            let data: Enable2FaRequest =
-                serde_json::from_value(data).map_err(|_| AuthError::InvalidRequest)?;
+            let data: Enable2FaRequest = serde_json::from_value(data.expect("Missing data field"))
+                .map_err(|_| AuthError::InvalidRequest)?;
             auth::handle_enable_2fa(username, data).await?
         }
         AuthType::Logout => todo!(),

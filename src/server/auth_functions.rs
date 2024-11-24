@@ -1,5 +1,7 @@
-use core::result::Result::Ok;
+use core::{option::Option::None, result::Result::Ok};
 use std::env;
+
+use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 
 use actix_web::Result;
 use aes_gcm::{
@@ -14,11 +16,17 @@ use argon2::{
 };
 use dotenvy::dotenv;
 
-use crate::smtp::{self, generate_reset_email_body};
+use crate::Claims;
 use crate::{db::db_helper::*, AuthError, EncryptionKey};
 use totp_rs::{Algorithm, Secret, TOTP};
 
 use regex::Regex;
+
+use lazy_static::lazy_static;
+
+lazy_static! {
+    static ref JWT_SECRET: String = generate_token();
+}
 
 pub fn get_env_variable(variable: &str) -> Option<String> {
     match std::env::var(variable) {
@@ -47,9 +55,9 @@ pub fn get_totp_config(username: &String, token: &String) -> TOTP {
     .unwrap()
 }
 
-pub async fn create_2fa_for_user(username: String) -> Result<(String, String), AuthError> {
-    let token = generate_token().await;
-    let totp = get_totp_config(&username, &token);
+pub async fn create_2fa_for_user(username: &String) -> Result<(String, String), AuthError> {
+    let token = generate_token();
+    let totp = get_totp_config(username, &token);
     let qr_code = totp.get_qr_base64().expect("Error generating QR code");
     Ok((qr_code, token))
 }
@@ -108,7 +116,7 @@ pub fn check_valid_password(password: &String) -> bool {
     valid && password.len() >= 8 && password.len() <= 16
 }
 
-pub async fn generate_token() -> String {
+pub fn generate_token() -> String {
     use rand::distributions::Alphanumeric;
     use rand::{thread_rng, Rng};
 
@@ -127,6 +135,9 @@ pub fn verify_reset_token(username: &String, reset_token: &String) -> Result<boo
     let token_hash =
         crate::db::db_helper::get_reset_hash(username).map_err(|_| AuthError::InvalidToken)?;
 
+    println!("Token hash: {}", &token_hash);
+    println!("Given toekn: {}", &reset_token);
+
     verify_hash(reset_token, &token_hash).map_err(|_| AuthError::InvalidToken)
 }
 
@@ -137,32 +148,6 @@ pub fn verify_confirmation_token(
     let verification_hash = get_verification_hash(username).map_err(|_| AuthError::InvalidToken)?;
 
     verify_hash(confirmation_token, &verification_hash).map_err(|_| AuthError::InvalidToken)
-}
-
-pub async fn send_reset_email(username: &String, reset_token: &String) -> Result<(), AuthError> {
-    // TODO: Two DB calls for one transaction is a little gross - will want to slim this down to one call
-
-    let encrypted_email = crate::db::db_helper::get_user_email(&username)
-        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
-
-    let user = crate::db::db_helper::find_user_by_username(&username)
-        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
-
-    let name = user.expect("No user present!").first_name;
-
-    let user_email = decrypt_string(encrypted_email, EncryptionKey::SmtpKey)
-        .await
-        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
-
-    smtp::send_email(
-        &user_email,
-        "Reset Password".to_string(),
-        generate_reset_email_body(reset_token, &name),
-        &name,
-    )
-    .await;
-
-    Ok(())
 }
 
 pub async fn encrypt_string(
@@ -207,6 +192,54 @@ pub async fn decrypt_string(
         .expect("failed to decrypt data");
 
     Ok(String::from_utf8(plaintext).expect("failed to convert vector of bytes to string"))
+}
+
+pub async fn generate_pending_token(
+    username: &String,
+    scope: String,
+) -> Result<String, jsonwebtoken::errors::Error> {
+    let utc_timestamp = chrono::Utc::now().timestamp();
+
+    let claims = Claims {
+        exp: utc_timestamp + 600, // JWT is good for 10 minutes
+        scope,
+        sub: username.clone(),
+    };
+
+    let token = encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(JWT_SECRET.as_ref()),
+    )?;
+
+    Ok(token)
+}
+
+pub async fn validate_pending_token(
+    username: &String,
+    pending_token: String,
+    scope: String,
+) -> Result<(), AuthError> {
+    let token = decode::<Claims>(
+        &pending_token,
+        &DecodingKey::from_secret(JWT_SECRET.as_ref()),
+        &Validation::default(),
+    )
+    .map_err(|_| AuthError::InvalidToken)?
+    .claims;
+
+    if &token.sub != username {
+        return Err(AuthError::InvalidCredentials);
+    }
+
+    let user_exists = does_user_exist(&token.sub)
+        .map_err(|_| AuthError::InternalServerError("Error searching for user".to_string()))?;
+
+    if token.scope == scope && user_exists {
+        Ok(())
+    } else {
+        Err(AuthError::TOTPError)
+    }
 }
 
 #[cfg(test)]

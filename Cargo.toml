@@ -28,4 +28,5 @@ aes-gcm = "0.10.3"
 hex = "0.4.3"
 totp-rs = { version = "5.6.0", features = ["qr"] }
 tokio = { version = "1.41.1", features = ["full"] }
+jsonwebtoken = "9.3.0"
 

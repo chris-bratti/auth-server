@@ -151,6 +151,7 @@ pub fn get_reset_hash(username: &String) -> Result<String, DBError> {
             let time_until_expiry = current_time.signed_duration_since(timestamp).num_minutes();
 
             if time_until_expiry >= 0 {
+                println!("Token already expired");
                 return Err(DBError::Error("Token expired".to_string()));
             }
             Ok(token.reset_token)
@@ -174,6 +175,7 @@ pub async fn create_user(user_info: UserInfo) -> Result<User, DBError> {
         username: db_user.username,
         two_factor: false,
         verified: false,
+        encrypted_email: db_user.email,
     };
 
     Ok(user)
@@ -191,6 +193,7 @@ pub fn find_user_by_username(username: &String) -> Result<Option<User>, DBError>
                 username: db_user.username,
                 two_factor: db_user.two_factor,
                 verified: db_user.verified,
+                encrypted_email: db_user.email,
             };
             Ok(Some(user))
         }
