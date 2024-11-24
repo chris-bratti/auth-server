@@ -1,4 +1,4 @@
-use core::{convert::Into, result::Result::Ok};
+use core::{convert::Into, result::Result::Ok, write};
 use std::{fmt, str::FromStr};
 
 use actix_identity::Identity;
@@ -16,10 +16,14 @@ use argon2::{
     password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
 };
+use serde_json::Value;
 
-use crate::db::db_helper::*;
-use crate::server::helpers::get_env_variable;
-use crate::smtp::{self, generate_reset_email_body, generate_welcome_email_body};
+use crate::{db::db_helper::*, ChangePasswordRequest, SignupRequest};
+use crate::{server::helpers::get_env_variable, NewPasswordRequest};
+use crate::{
+    smtp::{self, generate_reset_email_body, generate_welcome_email_body},
+    LoginRequest,
+};
 use serde::Deserialize;
 use serde::Serialize;
 use totp_rs::{Algorithm, Secret, TOTP};
@@ -36,6 +40,7 @@ pub enum AuthError {
     Error(String),
     TOTPError,
     AccountLocked,
+    InvalidRequest,
 }
 
 impl ResponseError for AuthError {
@@ -53,6 +58,7 @@ impl ResponseError for AuthError {
             AuthError::AccountLocked => StatusCode::UNAUTHORIZED,
             AuthError::TOTPError => StatusCode::UNAUTHORIZED,
             AuthError::Error(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            AuthError::InvalidRequest => StatusCode::BAD_REQUEST,
         }
     }
 }
@@ -85,6 +91,9 @@ impl fmt::Display for AuthError {
             AuthError::AccountLocked => {
                 write!(f, "Your account has been locked due to invalid attempts. Please try again later or reset your password")
             }
+            AuthError::InvalidRequest => {
+                write!(f, "Invalid auth request")
+            }
         }
     }
 }
@@ -116,6 +125,9 @@ impl fmt::Debug for AuthError {
             }
             AuthError::AccountLocked => {
                 write!(f, "Account locked")
+            }
+            AuthError::InvalidRequest => {
+                write!(f, "Invalid request")
             }
         }
     }
@@ -337,12 +349,12 @@ pub struct LoginCredentials {
 }
 
 /// Server function to log in user
-#[post("/login")]
-async fn login(
-    info: web::Json<LoginCredentials>,
+pub async fn handle_login(
+    username: String,
+    info: LoginRequest,
     request: HttpRequest,
 ) -> Result<HttpResponse, AuthError> {
-    let LoginCredentials { username, password } = info.into_inner();
+    let LoginRequest { password } = info;
 
     let encrypted_username: String = encrypt_string(&username, EncryptionKey::LoggerKey)
         .await
@@ -412,7 +424,7 @@ pub async fn get_user_from_session(
 }
 
 #[derive(Deserialize, Serialize)]
-struct NewUserData {
+pub struct NewUserData {
     first_name: String,
     last_name: String,
     username: String,
@@ -422,19 +434,23 @@ struct NewUserData {
 }
 
 /// Server function to create a new user
-#[post("/signup")]
-pub async fn signup(
-    info: web::Json<NewUserData>,
+pub async fn handle_signup(
+    username: String,
+    info: SignupRequest,
     request: HttpRequest,
 ) -> Result<HttpResponse, AuthError> {
-    let NewUserData {
+    let SignupRequest {
         first_name,
         last_name,
-        username,
-        password,
         email,
+        new_password_request,
+    } = info;
+
+    let NewPasswordRequest {
         confirm_password,
-    } = info.into_inner();
+        password,
+    } = new_password_request;
+
     // This should have been done on the form submit, but just in case something snuck through
     if confirm_password != password {
         return Err(AuthError::PasswordConfirmationError);
@@ -524,14 +540,19 @@ struct PasswordChange {
 }
 
 /// Server function to update user password
-#[post("/changepassword")]
-pub async fn change_password(info: web::Json<PasswordChange>) -> Result<HttpResponse, AuthError> {
-    let PasswordChange {
-        username,
-        new_password,
-        confirm_new_password,
+pub async fn handle_change_password(
+    username: String,
+    info: ChangePasswordRequest,
+) -> Result<HttpResponse, AuthError> {
+    let ChangePasswordRequest {
+        new_password_request,
         current_password,
-    } = info.into_inner();
+    } = info;
+
+    let NewPasswordRequest {
+        password,
+        confirm_password,
+    } = new_password_request;
     // Retrieve and check if supplied current password matches against store password hash
     let pass_result = crate::db::db_helper::get_pass_hash_for_username(&username)
         .map_err(|err| AuthError::InternalServerError(err.to_string()));
@@ -544,12 +565,12 @@ pub async fn change_password(info: web::Json<PasswordChange>) -> Result<HttpResp
     }
 
     // Server side password confirmation
-    if new_password != confirm_new_password {
+    if password != confirm_password {
         return Err(AuthError::PasswordConfirmationError);
     }
 
     // Do server side password strength validation
-    if !check_valid_password(&new_password) {
+    if !check_valid_password(&password) {
         return Err(AuthError::InvalidPassword);
     }
 
@@ -561,9 +582,7 @@ pub async fn change_password(info: web::Json<PasswordChange>) -> Result<HttpResp
     );
 
     // Hash new password
-    let pass_hash = hash_string(new_password)
-        .await
-        .expect("Error hashing password");
+    let pass_hash = hash_string(password).await.expect("Error hashing password");
 
     // Store new password in database
     crate::db::db_helper::update_user_password(&username, &pass_hash)

@@ -1,5 +1,11 @@
 use actix_web::cookie::Key;
-use auth_server::{auth, server::helpers::get_env_variable};
+use auth_server::{
+    auth::{self, AuthError, LoginCredentials, NewUserData},
+    server::helpers::get_env_variable,
+    AuthRequest, AuthType, ChangePasswordRequest, LoginRequest, SignupRequest,
+};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::time::Duration;
 
 use actix_web::*;
@@ -34,8 +40,6 @@ async fn main() -> std::io::Result<()> {
                     )
                     .build(),
             )
-            .service(auth::login)
-            .service(auth::signup)
             .service(auth::logout)
             .service(auth::get_user_from_session)
     })
@@ -48,29 +52,37 @@ fn get_secret_key() -> Key {
     return Key::generate();
 }
 
-/*
-#[get("/")]
-async fn index(user: Option<Identity>) -> impl Responder {
-    if let Some(user) = user {
-        let id = user.id().unwrap();
-        println!("{}", &id);
-        format!("Welcome! {}", id)
-    } else {
-        println!("Welcome anon");
-        "Welcome Anonymous!".to_owned()
+#[post("/auth_request")]
+async fn auth_request(
+    auth_payload: web::Json<AuthRequest>,
+    request: HttpRequest,
+) -> Result<HttpResponse, AuthError> {
+    let request_type = request
+        .headers()
+        .get("X-Request-Type")
+        .and_then(|v| v.to_str().ok())
+        .ok_or(AuthError::InvalidRequest)?;
+
+    let AuthRequest { username, data } = auth_payload.into_inner();
+
+    match AuthType::from(request_type) {
+        AuthType::Login => {
+            let data: LoginRequest =
+                serde_json::from_value(data).map_err(|_| AuthError::InvalidRequest)?;
+            auth::handle_login(username, data, request).await?;
+        }
+        AuthType::Signup => {
+            let data: SignupRequest =
+                serde_json::from_value(data).map_err(|_| AuthError::InvalidRequest)?;
+            auth::handle_signup(username, data, request).await?;
+        }
+        AuthType::ChangePassword => {
+            let data: ChangePasswordRequest =
+                serde_json::from_value(data).map_err(|_| AuthError::InvalidRequest)?;
+            auth::handle_change_password(username, data).await?;
+        }
+        _ => return Err(AuthError::InvalidRequest),
     }
-}
 
-#[post("/login")]
-async fn login(request: HttpRequest) -> impl Responder {
-    Identity::login(&request.extensions(), "User1".into()).expect("ohno");
-    HttpResponse::Ok()
+    Ok(HttpResponse::Ok().finish())
 }
-
-#[post("/logout")]
-async fn logout(user: Identity) -> impl Responder {
-    println!("Bye bye");
-    user.logout();
-    HttpResponse::Ok()
-}
-    */
