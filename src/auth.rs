@@ -405,13 +405,13 @@ pub async fn handle_generate_2fa(username: String) -> Result<HttpResponse, AuthE
     let (qr_code, token) = create_2fa_for_user(&username)
         .await
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
-    let pending_token = generate_pending_token(&username, "enable_2fa".to_string())
+    let enable_2fa_token = generate_pending_token(&username, "enable_2fa".to_string())
         .await
         .map_err(|_| AuthError::InternalServerError("Error creating pending_token".to_string()))?;
     Ok(HttpResponse::Ok().json(web::Json(Generate2FaResponse {
         qr_code,
         token,
-        pending_token,
+        enable_2fa_token,
     })))
 }
 
@@ -422,7 +422,7 @@ pub async fn handle_enable_2fa(
     let Enable2FaRequest {
         two_factor_token,
         otp,
-        pending_token,
+        enable_2fa_token,
     } = info;
 
     let two_factor_enabled = user_has_2fa_enabled(&username)
@@ -434,7 +434,7 @@ pub async fn handle_enable_2fa(
         ));
     }
 
-    validate_pending_token(&username, pending_token, "enable_2fa".to_string())
+    validate_pending_token(&username, enable_2fa_token, "enable_2fa".to_string())
         .await
         .map_err(|_| AuthError::TOTPError)?;
 
@@ -460,12 +460,12 @@ pub async fn handle_verify_otp(
     info: VerifyOtpRequest,
     request: HttpRequest,
 ) -> Result<HttpResponse, AuthError> {
-    let VerifyOtpRequest { otp, pending_token } = info;
+    let VerifyOtpRequest { otp, login_token } = info;
 
     println!("Verifying OTP for {}", username);
     let otp = otp.trim().to_string();
 
-    validate_pending_token(&username, pending_token, "verify_otp".to_string())
+    validate_pending_token(&username, login_token, "verify_otp".to_string())
         .await
         .map_err(|_| AuthError::TOTPError)?;
 

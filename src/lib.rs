@@ -225,14 +225,14 @@ pub struct VerifyUserRequest {
 #[derive(Serialize, Deserialize)]
 pub struct VerifyOtpRequest {
     otp: String,
-    pending_token: String,
+    login_token: String,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct Enable2FaRequest {
     two_factor_token: String,
     otp: String,
-    pending_token: String,
+    enable_2fa_token: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -260,5 +260,5 @@ struct ValidateOtpResponse<'a> {
 pub struct Generate2FaResponse {
     qr_code: String,
     token: String,
-    pending_token: String,
+    enable_2fa_token: String,
 }
