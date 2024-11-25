@@ -21,6 +21,15 @@ pub struct DBUser {
     pub last_failed_attempt: Option<SystemTime>,
 }
 
+#[derive(Queryable, Selectable, Identifiable, Debug, serde::Deserialize, serde::Serialize)]
+#[diesel(table_name = crate::db::schema::api_keys)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct ApiKey {
+    pub id: i32,
+    pub app_name: String,
+    pub api_key: String,
+}
+
 #[derive(Queryable, Selectable, Identifiable, Associations, Debug, PartialEq)]
 #[diesel(table_name = password_reset_tokens)]
 #[diesel(belongs_to(DBUser, foreign_key = user_id))]
@@ -68,4 +77,11 @@ pub struct NewDBUser<'a> {
     pub verified: &'a bool,
     pub two_factor: &'a bool,
     pub locked: &'a bool,
+}
+
+#[derive(Insertable, Debug)]
+#[diesel(table_name = api_keys)]
+pub struct NewApiKey<'a> {
+    pub app_name: &'a str,
+    pub api_key: &'a str,
 }

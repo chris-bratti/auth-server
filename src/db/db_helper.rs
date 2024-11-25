@@ -1,35 +1,34 @@
-use std::fmt;
+use core::convert::From;
 
 use chrono::{DateTime, Utc};
+use diesel::{Connection, PgConnection};
+use dotenvy::dotenv;
 
-use crate::{auth::UserInfo, User};
+use crate::{DBError, User, UserInfo};
 
-use super::{
-    reset_token_table::{delete_db_reset_token, get_reset_token_from_db, save_reset_token_to_db},
-    users_db::{
-        add_2fa_for_db_user, create_db_user, delete_db_user, get_user_from_username,
-        increment_db_password_tries, set_db_user_as_verified, unlock_db_user, update_db_password,
-        update_db_username,
-    },
-    verification_tokens_table::{
-        delete_db_verification_token, get_verification_token_from_db, save_verification_token_to_db,
-    },
-};
+use std::env;
+
+use super::{models::ApiKey, reset_token_table::*, users_db::*, verification_tokens_table::*};
+
+pub fn establish_connection() -> Result<diesel::PgConnection, DBError> {
+    dotenv().ok();
+
+    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    PgConnection::establish(&database_url).map_err(DBError::from)
+}
 
 pub fn does_user_exist(username: &String) -> Result<bool, DBError> {
-    let db_user =
-        get_user_from_username(username).map_err(|err| DBError::InternalServerError(err))?;
+    let db_user = get_user_from_username(username)?;
 
     Ok(db_user.is_some())
 }
 
 pub fn enable_2fa_for_user(username: &String, encrypted_token: &String) -> Result<(), DBError> {
-    add_2fa_for_db_user(username, encrypted_token).map_err(|err| DBError::InternalServerError(err))
+    add_2fa_for_db_user(username, encrypted_token)
 }
 
 pub fn get_user_2fa_token(username: &String) -> Result<Option<String>, DBError> {
-    let db_user =
-        get_user_from_username(username).map_err(|err| DBError::InternalServerError(err))?;
+    let db_user = get_user_from_username(username)?;
 
     match db_user {
         Some(user) => Ok(user.two_factor_token),
@@ -38,32 +37,29 @@ pub fn get_user_2fa_token(username: &String) -> Result<Option<String>, DBError> 
 }
 
 pub fn get_pass_hash_for_username(username: &String) -> Result<String, DBError> {
-    let db_user =
-        get_user_from_username(username).map_err(|err| DBError::InternalServerError(err))?;
+    let db_user = get_user_from_username(username)?;
 
     match db_user {
         Some(user) => Ok(user.pass_hash),
-        None => Err(DBError::NotFound(username.clone())),
+        None => Err(DBError::NotFound(username.to_string())),
     }
 }
 
 pub fn user_has_2fa_enabled(username: &String) -> Result<bool, DBError> {
-    let db_user =
-        get_user_from_username(username).map_err(|err| DBError::InternalServerError(err))?;
+    let db_user = get_user_from_username(username)?;
 
     match db_user {
         Some(user) => Ok(user.two_factor),
-        None => Err(DBError::NotFound(username.clone())),
+        None => Err(DBError::NotFound(username.to_string())),
     }
 }
 
 pub fn unlock_user(username: &String) -> Result<(), DBError> {
-    unlock_db_user(username).map_err(|err| DBError::InternalServerError(err))
+    unlock_db_user(username)
 }
 
 pub fn is_user_locked(username: &String) -> Result<bool, DBError> {
-    let db_user =
-        get_user_from_username(username).map_err(|err| DBError::InternalServerError(err))?;
+    let db_user = get_user_from_username(username)?;
 
     match db_user {
         Some(user) => {
@@ -79,28 +75,27 @@ pub fn is_user_locked(username: &String) -> Result<bool, DBError> {
                     current_time.signed_duration_since(timestamp).num_minutes();
 
                 if minutes_since_last_attempt > 10 {
-                    unlock_db_user(username).map_err(|err| DBError::InternalServerError(err))?;
+                    unlock_db_user(username)?;
                     return Ok(false);
                 }
             }
             Ok(user.locked)
         }
-        None => Err(DBError::NotFound(username.clone())),
+        None => Err(DBError::NotFound(username.to_string())),
     }
 }
 
 pub fn failed_login_attempt(username: &String) -> Result<bool, DBError> {
-    increment_db_password_tries(username).map_err(|err| DBError::InternalServerError(err))
+    increment_db_password_tries(username)
 }
 
 pub fn set_user_as_verified(username: &String) -> Result<(), DBError> {
-    set_db_user_as_verified(username).map_err(|err| DBError::InternalServerError(err))?;
+    set_db_user_as_verified(username)?;
     Ok(())
 }
 
 pub fn get_verification_hash(username: &String) -> Result<String, DBError> {
-    let verification_token = get_verification_token_from_db(username)
-        .map_err(|err| DBError::InternalServerError(err))?;
+    let verification_token = get_verification_token_from_db(username)?;
 
     match verification_token {
         Some(token) => {
@@ -123,21 +118,19 @@ pub fn get_verification_hash(username: &String) -> Result<String, DBError> {
 }
 
 pub fn remove_reset_token(username: &String) -> Result<(), DBError> {
-    let _ = delete_db_reset_token(username).map_err(|err| DBError::InternalServerError(err))?;
+    let _ = delete_db_reset_token(username)?;
 
     Ok(())
 }
 
 pub fn remove_verification_token(username: &String) -> Result<(), DBError> {
-    let _ =
-        delete_db_verification_token(username).map_err(|err| DBError::InternalServerError(err))?;
+    let _ = delete_db_verification_token(username)?;
 
     Ok(())
 }
 
 pub fn get_reset_hash(username: &String) -> Result<String, DBError> {
-    let rest_token =
-        get_reset_token_from_db(username).map_err(|err| DBError::InternalServerError(err))?;
+    let rest_token = get_reset_token_from_db(username)?;
 
     match rest_token {
         Some(token) => {
@@ -151,7 +144,6 @@ pub fn get_reset_hash(username: &String) -> Result<String, DBError> {
             let time_until_expiry = current_time.signed_duration_since(timestamp).num_minutes();
 
             if time_until_expiry >= 0 {
-                println!("Token already expired");
                 return Err(DBError::Error("Token expired".to_string()));
             }
             Ok(token.reset_token)
@@ -161,13 +153,13 @@ pub fn get_reset_hash(username: &String) -> Result<String, DBError> {
 }
 
 pub fn update_user_password(username: &String, new_pass_hash: &String) -> Result<(), DBError> {
-    update_db_password(username, new_pass_hash).map_err(|err| DBError::InternalServerError(err))?;
+    update_db_password(username, new_pass_hash)?;
 
     Ok(())
 }
 
 pub async fn create_user(user_info: UserInfo) -> Result<User, DBError> {
-    let db_user = create_db_user(user_info).map_err(|err| DBError::InternalServerError(err))?;
+    let db_user = create_db_user(user_info)?;
 
     let user = User {
         first_name: db_user.first_name,
@@ -182,8 +174,7 @@ pub async fn create_user(user_info: UserInfo) -> Result<User, DBError> {
 }
 
 pub fn find_user_by_username(username: &String) -> Result<Option<User>, DBError> {
-    let db_user =
-        get_user_from_username(username).map_err(|err| DBError::InternalServerError(err))?;
+    let db_user = get_user_from_username(username)?;
 
     match db_user {
         Some(db_user) => {
@@ -202,20 +193,13 @@ pub fn find_user_by_username(username: &String) -> Result<Option<User>, DBError>
 }
 
 pub fn update_username(username: &String, new_username: &String) -> Result<(), DBError> {
-    let db_user = update_db_username(username, new_username);
+    update_db_username(username, new_username)?;
 
-    match db_user {
-        Ok(_) => Ok(()),
-        Err(err) => match err {
-            diesel::result::Error::NotFound => Err(DBError::NotFound(username.clone())),
-            _ => Err(DBError::InternalServerError(err)),
-        },
-    }
+    Ok(())
 }
 
 pub fn delete_user(username: &String) -> Result<(), DBError> {
-    let records_deleted =
-        delete_db_user(username).map_err(|err| DBError::InternalServerError(err))?;
+    let records_deleted = delete_db_user(username)?;
 
     if records_deleted > 1 {
         panic!(
@@ -232,61 +216,19 @@ pub fn save_reset(username: &String, reset_token: &String) -> Result<(), DBError
         return Err(DBError::NotFound(username.clone()));
     }
 
-    save_reset_token_to_db(username, reset_token).map_err(|err| DBError::InternalServerError(err))
+    save_reset_token_to_db(username, reset_token)
 }
 
 pub fn save_verification(username: &String, verification_token: &String) -> Result<(), DBError> {
     save_verification_token_to_db(username, verification_token)
-        .map_err(|err| DBError::InternalServerError(err))
 }
 
 pub fn get_user_email(username: &String) -> Result<String, DBError> {
-    let db_user =
-        get_user_from_username(username).map_err(|err| DBError::InternalServerError(err))?;
+    let db_user = get_user_from_username(username)?;
 
     match db_user {
         Some(user) => Ok(user.email),
         None => Err(DBError::NotFound(username.clone())),
-    }
-}
-
-pub enum DBError {
-    NotFound(String),
-    InternalServerError(diesel::result::Error),
-    Error(String),
-}
-
-// Implement std::fmt::Display for AppError
-impl fmt::Display for DBError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            DBError::NotFound(_data) => {
-                write!(f, "User not found!")
-            }
-            DBError::InternalServerError(_diesel_error) => {
-                write!(f, "There was an error on our side :(")
-            }
-            DBError::Error(msg) => {
-                write!(f, "{msg}")
-            }
-        }
-    }
-}
-
-// Implement std::fmt::Debug for AppError
-impl fmt::Debug for DBError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            DBError::NotFound(data) => {
-                write!(f, "Data could not be found: {}", data)
-            }
-            DBError::InternalServerError(diesel_error) => {
-                write!(f, "Diesel error: {}", diesel_error)
-            }
-            DBError::Error(msg) => {
-                write!(f, "{msg}")
-            }
-        }
     }
 }
 
@@ -295,10 +237,10 @@ pub mod test_db_helpers {
     use core::assert_eq;
 
     use crate::{
-        auth::UserInfo,
         db::db_helper::{
             delete_user, does_user_exist, find_user_by_username, get_pass_hash_for_username,
         },
+        UserInfo,
     };
 
     use super::create_user;

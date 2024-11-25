@@ -1,10 +1,12 @@
 use actix_web::cookie::Key;
 use auth_server::{
     auth::{self},
-    server::auth_functions::get_env_variable,
-    AuthError, AuthRequest, AuthType, ChangePasswordRequest, Enable2FaRequest, LoginRequest,
-    ResetPasswordRequest, SignupRequest, VerifyOtpRequest, VerifyUserRequest,
+    server::auth_functions::{add_api_key, get_env_variable, load_api_keys, verify_api_key},
+    ApiKeys, AuthError, AuthRequest, AuthType, ChangePasswordRequest, Enable2FaRequest,
+    LoginRequest, ResetPasswordRequest, SignupRequest, VerifyOtpRequest, VerifyUserRequest,
 };
+use clap::{Parser, Subcommand};
+
 use std::time::Duration;
 
 use actix_web::*;
@@ -12,9 +14,50 @@ use actix_web::*;
 use actix_identity::IdentityMiddleware;
 use actix_session::{config::PersistentSession, storage::RedisSessionStore, SessionMiddleware};
 
+#[derive(Parser)]
+#[clap(name = "AuthServer", version = "1.0", author = "You")]
+struct Cli {
+    #[clap(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    AddApiKey {
+        #[clap(long)]
+        app_name: String,
+        #[clap(long)]
+        api_key: String,
+        #[clap(long)]
+        auth_key: String,
+    },
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     // Generate the list of routes in your Leptos App
+
+    let cli = Cli::parse();
+
+    match &cli.command {
+        Some(Commands::AddApiKey {
+            app_name,
+            api_key,
+            auth_key,
+        }) => {
+            if *auth_key == get_env_variable("ADMIN_KEY").expect("Error getting ADMIN_KEY") {
+                add_api_key(app_name, api_key)
+                    .await
+                    .expect("Error adding api key!");
+            } else {
+                println!("Invalid ADMIN_KEY!");
+            }
+            return Ok(());
+        }
+        None => {
+            println!("Starting server...");
+        }
+    }
 
     let secret_key = get_secret_key();
     let redis_connection_string =
@@ -25,8 +68,11 @@ async fn main() -> std::io::Result<()> {
 
     println!("Starting server on port 8080");
 
+    let api_keys = web::Data::new(load_api_keys().await.unwrap());
+
     HttpServer::new(move || {
         App::new()
+            .app_data(api_keys.clone())
             .wrap(
                 IdentityMiddleware::builder()
                     .login_deadline(Some(Duration::new(259200, 0)))
@@ -58,12 +104,29 @@ fn get_secret_key() -> Key {
 async fn auth_request(
     auth_payload: web::Json<AuthRequest>,
     request: HttpRequest,
+    api_keys: web::Data<ApiKeys>,
 ) -> Result<HttpResponse, AuthError> {
     let request_type = request
         .headers()
         .get("X-Request-Type")
         .and_then(|v| v.to_str().ok())
         .ok_or(AuthError::InvalidRequest)?;
+
+    let api_key = request
+        .headers()
+        .get("X-Api-Key")
+        .and_then(|v| v.to_str().ok())
+        .ok_or(AuthError::InvalidRequest)?;
+
+    let app_name = request
+        .headers()
+        .get("X-App-Name")
+        .and_then(|v| v.to_str().ok())
+        .ok_or(AuthError::InvalidRequest)?;
+
+    if !verify_api_key(String::from(app_name), String::from(api_key), &api_keys).await? {
+        return Err(AuthError::InvalidCredentials);
+    }
 
     let AuthRequest { username, data } = auth_payload.into_inner();
 

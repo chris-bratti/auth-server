@@ -16,18 +16,7 @@ use crate::{
     smtp::{self, generate_welcome_email_body},
     LoginRequest,
 };
-use crate::{AuthResponse, Generate2FaResponse, LoginResponse, NewPasswordRequest};
-use serde::Deserialize;
-use serde::Serialize;
-
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct UserInfo {
-    pub username: String,
-    pub first_name: String,
-    pub last_name: String,
-    pub email: String,
-    pub pass_hash: String,
-}
+use crate::{AuthResponse, Generate2FaResponse, LoginResponse, NewPasswordRequest, UserInfo};
 
 /// Server function to log in user
 pub async fn handle_login(
@@ -174,7 +163,7 @@ pub async fn handle_signup(
     // TODO: Check to ensure unique emails - Maybe I'll end up eliminating usernames all together
 
     // Hash password
-    let pass_hash = hash_string(password);
+    let pass_hash = hash_string(&password);
 
     let encrypted_email = encrypt_string(&email, EncryptionKey::SmtpKey);
 
@@ -193,7 +182,7 @@ pub async fn handle_signup(
     let generated_token = generate_token();
 
     // Hash token
-    let verification_token = hash_string(generated_token.clone())
+    let verification_token = hash_string(&generated_token)
         .await
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
@@ -268,7 +257,9 @@ pub async fn handle_change_password(
     );
 
     // Hash new password
-    let pass_hash = hash_string(password).await.expect("Error hashing password");
+    let pass_hash = hash_string(&password)
+        .await
+        .expect("Error hashing password");
 
     // Store new password in database
     crate::db::db_helper::update_user_password(&username, &pass_hash)
@@ -316,7 +307,9 @@ pub async fn handle_reset_password(
     }
 
     // Hash new password
-    let pass_hash = hash_string(password).await.expect("Error hashing password");
+    let pass_hash = hash_string(&password)
+        .await
+        .expect("Error hashing password");
 
     // Store new password in database
     crate::db::db_helper::update_user_password(&username, &pass_hash)
@@ -353,7 +346,7 @@ pub async fn handle_request_password_reset(username: String) -> Result<HttpRespo
     let generated_token = generate_token();
 
     // Hash token
-    let reset_token = hash_string(generated_token.clone())
+    let reset_token = hash_string(&generated_token)
         .await
         .map_err(|_| AuthError::InternalServerError("Something went wrong".to_string()))?;
 

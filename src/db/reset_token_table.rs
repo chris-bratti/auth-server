@@ -1,16 +1,14 @@
+use crate::db::db_helper::establish_connection;
 use crate::db::models::{DBResetToken, DBUser, NewDBResetToken};
 use crate::db::schema::password_reset_tokens::user_id;
 use crate::db::schema::{self, password_reset_tokens};
-use crate::db::users_db::establish_connection;
+use crate::DBError;
 use diesel::{prelude::*, select};
+use schema::users::dsl::*;
 use std::time::Duration;
 
-pub fn get_reset_token_from_db(
-    uname: &String,
-) -> Result<Option<DBResetToken>, diesel::result::Error> {
-    use schema::users::dsl::*;
-
-    let mut connection = establish_connection();
+pub fn get_reset_token_from_db(uname: &String) -> Result<Option<DBResetToken>, DBError> {
+    let mut connection = establish_connection()?;
 
     let db_user = users
         .filter(username.eq(uname))
@@ -26,13 +24,8 @@ pub fn get_reset_token_from_db(
     Ok(pass_reset_token)
 }
 
-pub fn save_reset_token_to_db(
-    uname: &String,
-    rtoken: &String,
-) -> Result<(), diesel::result::Error> {
-    use schema::users::dsl::*;
-
-    let mut connection = establish_connection();
+pub fn save_reset_token_to_db(uname: &String, rtoken: &String) -> Result<(), DBError> {
+    let mut connection = establish_connection()?;
 
     let now = select(diesel::dsl::now).get_result::<std::time::SystemTime>(&mut connection)?;
 
@@ -61,14 +54,12 @@ pub fn save_reset_token_to_db(
                 .get_result(&mut connection)?;
             Ok(())
         }
-        None => Err(diesel::result::Error::NotFound),
+        None => Err(DBError::NotFound(uname.to_string())),
     }
 }
 
-pub fn delete_db_reset_token(uname: &String) -> Result<usize, diesel::result::Error> {
-    use schema::users::dsl::*;
-
-    let mut connection = establish_connection();
+pub fn delete_db_reset_token(uname: &String) -> Result<usize, DBError> {
+    let mut connection = establish_connection()?;
 
     let db_user: Option<DBUser> = users
         .filter(username.eq(uname))
@@ -79,7 +70,8 @@ pub fn delete_db_reset_token(uname: &String) -> Result<usize, diesel::result::Er
 
     match db_user {
         Some(user) => diesel::delete(password_reset_tokens::table.filter(user_id.eq(user.id)))
-            .execute(&mut connection),
-        None => Err(diesel::result::Error::NotFound),
+            .execute(&mut connection)
+            .map_err(DBError::from),
+        None => Err(DBError::NotFound(uname.to_string())),
     }
 }

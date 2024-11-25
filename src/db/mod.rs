@@ -1,3 +1,4 @@
+pub mod api_keys_table;
 pub mod db_helper;
 pub mod models;
 pub mod reset_token_table;

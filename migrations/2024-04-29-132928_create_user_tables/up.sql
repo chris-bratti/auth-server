@@ -27,3 +27,9 @@ CREATE TABLE password_reset_tokens (
     reset_token_expiry TIMESTAMP NOT NULL,
     user_id INTEGER NOT NULL REFERENCES users(id)
 );
+
+CREATE TABLE api_keys (
+    id SERIAL PRIMARY KEY,
+    app_name text NOT NULL,
+    api_key text NOT NULL,
+);
