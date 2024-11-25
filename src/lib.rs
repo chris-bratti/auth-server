@@ -25,11 +25,16 @@ pub enum AuthError {
 
 impl ResponseError for AuthError {
     fn error_response(&self) -> HttpResponse {
-        HttpResponse::build(self.status_code()).body(self.to_string())
-    }
+        let error_message = format!("{}", self);
 
-    fn status_code(&self) -> StatusCode {
-        match *self {
+        // Build the JSON response
+        let body = serde_json::json!({
+            "success": false,
+            "message": error_message
+        });
+
+        // Customize the HTTP status code if needed
+        let status_code = match *self {
             AuthError::InvalidCredentials => StatusCode::UNAUTHORIZED,
             AuthError::InternalServerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             AuthError::InvalidToken => StatusCode::UNAUTHORIZED,
@@ -39,7 +44,9 @@ impl ResponseError for AuthError {
             AuthError::TOTPError => StatusCode::UNAUTHORIZED,
             AuthError::Error(_) => StatusCode::INTERNAL_SERVER_ERROR,
             AuthError::InvalidRequest => StatusCode::BAD_REQUEST,
-        }
+        };
+
+        HttpResponse::build(status_code).json(body)
     }
 }
 
@@ -235,6 +242,13 @@ pub struct Enable2FaRequest {
     enable_2fa_token: String,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct AuthResponse<'a, T> {
+    success: bool,
+    message: &'a str,
+    response: Option<T>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 struct Claims {
     scope: String,
@@ -243,17 +257,9 @@ struct Claims {
 }
 
 #[derive(Serialize, Deserialize)]
-struct LoginResponse<'a> {
-    success: bool,
-    message: &'a str,
+struct LoginResponse {
     two_factor_enabled: bool,
     login_token: Option<String>,
-}
-
-#[derive(Serialize, Deserialize)]
-struct ValidateOtpResponse<'a> {
-    success: bool,
-    message: &'a str,
 }
 
 #[derive(Serialize, Deserialize)]

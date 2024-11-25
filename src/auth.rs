@@ -16,7 +16,7 @@ use crate::{
     smtp::{self, generate_welcome_email_body},
     LoginRequest,
 };
-use crate::{Generate2FaResponse, LoginResponse, NewPasswordRequest};
+use crate::{AuthResponse, Generate2FaResponse, LoginResponse, NewPasswordRequest};
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -80,21 +80,25 @@ pub async fn handle_login(
             .map_err(|_| {
                 AuthError::InternalServerError(String::from("Error generating pending token"))
             })?;
-        Ok(HttpResponse::Ok().json(LoginResponse {
+        Ok(HttpResponse::Ok().json(AuthResponse {
             success: false,
             message: "User has 2FA enabled",
-            two_factor_enabled: true,
-            login_token: Some(pending_token),
+            response: Some(LoginResponse {
+                two_factor_enabled: true,
+                login_token: Some(pending_token),
+            }),
         }))
     } else {
         // Attach user to current session
         Identity::login(&request.extensions(), username.clone().into()).unwrap();
 
-        Ok(HttpResponse::Ok().json(LoginResponse {
+        Ok(HttpResponse::Ok().json(AuthResponse {
             success: true,
             message: "Login success",
-            two_factor_enabled: false,
-            login_token: None,
+            response: Some(LoginResponse {
+                two_factor_enabled: false,
+                login_token: None,
+            }),
         }))
     }
 }
@@ -214,7 +218,11 @@ pub async fn handle_signup(
     println!("Saving user to session: {}", user.username);
     Identity::login(&request.extensions(), user.username.into()).unwrap();
 
-    Ok(HttpResponse::new(StatusCode::OK))
+    Ok(HttpResponse::Ok().json(AuthResponse::<()> {
+        success: true,
+        message: "New user enrolled",
+        response: None,
+    }))
 }
 
 /// Server function to update user password
@@ -266,7 +274,11 @@ pub async fn handle_change_password(
     crate::db::db_helper::update_user_password(&username, &pass_hash)
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
-    Ok(HttpResponse::Ok().finish())
+    Ok(HttpResponse::Ok().json(AuthResponse::<()> {
+        success: true,
+        message: "Password change successful",
+        response: None,
+    }))
 }
 
 pub async fn handle_reset_password(
@@ -314,7 +326,11 @@ pub async fn handle_reset_password(
 
     unlock_user(&username).map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
-    Ok(HttpResponse::new(StatusCode::OK))
+    Ok(HttpResponse::Ok().json(AuthResponse::<()> {
+        success: true,
+        message: "Password reset successful",
+        response: None,
+    }))
 }
 
 pub async fn handle_request_password_reset(username: String) -> Result<HttpResponse, AuthError> {
@@ -364,7 +380,11 @@ pub async fn handle_request_password_reset(username: String) -> Result<HttpRespo
         )
     });
 
-    Ok(HttpResponse::new(StatusCode::OK))
+    Ok(HttpResponse::Ok().json(AuthResponse::<()> {
+        success: true,
+        message: "Password reset request successful",
+        response: None,
+    }))
 }
 
 pub async fn handle_verify_user(
@@ -389,7 +409,11 @@ pub async fn handle_verify_user(
     remove_verification_token(&username)
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
-    Ok(HttpResponse::new(StatusCode::OK))
+    Ok(HttpResponse::Ok().json(AuthResponse::<()> {
+        success: true,
+        message: "User verified",
+        response: None,
+    }))
 }
 
 pub async fn handle_generate_2fa(username: String) -> Result<HttpResponse, AuthError> {
@@ -452,7 +476,11 @@ pub async fn handle_enable_2fa(
     enable_2fa_for_user(&username, &encrypted_token)
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
-    Ok(HttpResponse::Ok().body("true"))
+    Ok(HttpResponse::Ok().json(AuthResponse::<()> {
+        success: true,
+        message: "2FA enabled",
+        response: None,
+    }))
 }
 
 pub async fn handle_verify_otp(
@@ -482,7 +510,11 @@ pub async fn handle_verify_otp(
     // Attach user to current session
     Identity::login(&request.extensions(), username.clone().into()).unwrap();
 
-    Ok(HttpResponse::Ok().body("true"))
+    Ok(HttpResponse::Ok().json(AuthResponse::<()> {
+        success: true,
+        message: "OTP was successful",
+        response: None,
+    }))
 }
 
 #[post("/logout")]
