@@ -11,7 +11,7 @@ http = { version = "1.1.0"}
 wasm-bindgen = "=0.2.95"
 actix-session = { version = "0.10.1", features = ["redis-session"]}
 actix-identity = {version = "0.8.0"}
-diesel = { version = "2.2.4", features = ["postgres"]}
+diesel = { version = "2.2.5", features = ["postgres"]}
 dotenvy = { version = "0.15.7"}
 serde = { version = "1.0.215", features = ["derive"] }
 serde_json = "1.0.133"
