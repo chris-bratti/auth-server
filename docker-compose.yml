@@ -2,9 +2,9 @@
 version: '3.3'
 
 services:
-  auth-leptos:
-    image: rhysbratti/auth_leptos:latest
-    container_name: leptos-auth
+  auth-server:
+    image: auth-server:latest
+    container_name: auth-server
     networks:
       - leptos_network
     ports:

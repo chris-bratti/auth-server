@@ -23,6 +23,8 @@ async fn main() -> std::io::Result<()> {
         .await
         .unwrap();
 
+    println!("Starting server on port 8080");
+
     HttpServer::new(move || {
         App::new()
             .wrap(
@@ -43,7 +45,7 @@ async fn main() -> std::io::Result<()> {
             .service(auth::get_user_from_session)
             .service(auth_request)
     })
-    .bind(("127.0.0.1", 8080))?
+    .bind(("0.0.0.0", 8080))?
     .run()
     .await
 }

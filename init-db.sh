@@ -14,4 +14,4 @@ else
 fi
 
 echo "Starting the application..."
-exec /app/auth_leptos
+exec /app/auth-server
