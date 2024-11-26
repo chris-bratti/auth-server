@@ -1,9 +1,9 @@
 use core::{option::Option::None, result::Result::Ok};
-use std::env;
+use std::{collections::HashMap, env};
 
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 
-use actix_web::Result;
+use actix_web::{web, Result};
 use aes_gcm::{
     aead::{Aead, AeadCore, KeyInit},
     Aes256Gcm,
@@ -15,9 +15,13 @@ use argon2::{
     Argon2,
 };
 use dotenvy::dotenv;
+use std::sync::Arc;
 
-use crate::Claims;
-use crate::{db::db_helper::*, AuthError, EncryptionKey};
+use crate::{db::api_keys_table::get_api_keys, Claims};
+use crate::{
+    db::{api_keys_table::add_new_api_key, db_helper::*},
+    ApiKeys, AuthError, EncryptionKey,
+};
 use totp_rs::{Algorithm, Secret, TOTP};
 
 use regex::Regex;
@@ -79,7 +83,7 @@ pub async fn get_totp(username: &String) -> Result<String, AuthError> {
 }
 
 /// Hash password with Argon2
-pub async fn hash_string(password: String) -> Result<String, argon2::password_hash::Error> {
+pub async fn hash_string(password: &String) -> Result<String, argon2::password_hash::Error> {
     let salt = SaltString::generate(&mut OsRng);
 
     let argon2 = Argon2::default();
@@ -242,6 +246,42 @@ pub async fn validate_pending_token(
     }
 }
 
+pub async fn load_api_keys() -> Result<HashMap<String, Arc<String>>, AuthError> {
+    let api_keys = get_api_keys()
+        .map_err(|err| AuthError::InternalServerError(err.to_string()))?
+        .unwrap_or_default()
+        .into_iter()
+        .map(|k| (k.app_name, Arc::new(k.api_key)))
+        .collect();
+
+    Ok(api_keys)
+}
+
+pub async fn add_api_key(app_name: &String) -> Result<String, AuthError> {
+    let api_key = generate_token();
+    let hash = hash_string(&api_key)
+        .await
+        .map_err(|_| AuthError::Error("Failed to hash api key".to_string()))?;
+
+    add_new_api_key(app_name, &hash)
+        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
+
+    Ok(api_key)
+}
+
+pub async fn verify_api_key(
+    app_name: String,
+    api_key: String,
+    api_keys: &web::Data<ApiKeys>,
+) -> Result<bool, AuthError> {
+    api_keys
+        .get_app_api_key(&app_name)
+        .map_or(Ok(false), |hashed_key| {
+            verify_hash(&api_key, &hashed_key)
+                .map_err(|_| AuthError::InternalServerError("Error validating hash".to_string()))
+        })
+}
+
 #[cfg(test)]
 mod test_auth {
 
@@ -255,7 +295,7 @@ mod test_auth {
     async fn test_password_hashing() {
         let password = "whatALovelyL!ttleP@s$w0rd".to_string();
 
-        let hashed_password = hash_string(password.clone()).await;
+        let hashed_password = hash_string(&password.clone()).await;
 
         assert!(hashed_password.is_ok());
 

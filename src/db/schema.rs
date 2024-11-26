@@ -35,11 +35,15 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    api_keys (id) {
+        id -> Int4,
+        app_name -> Text,
+        api_key -> Text,
+    }
+}
+
 diesel::joinable!(password_reset_tokens -> users (user_id));
 diesel::joinable!(verification_tokens -> users (user_id));
 
-diesel::allow_tables_to_appear_in_same_query!(
-    password_reset_tokens,
-    users,
-    verification_tokens,
-);
+diesel::allow_tables_to_appear_in_same_query!(password_reset_tokens, users, verification_tokens,);

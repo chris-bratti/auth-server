@@ -1,32 +1,85 @@
 use actix_web::cookie::Key;
 use auth_server::{
     auth::{self},
-    server::auth_functions::get_env_variable,
-    AuthError, AuthRequest, AuthType, ChangePasswordRequest, Enable2FaRequest, LoginRequest,
-    ResetPasswordRequest, SignupRequest, VerifyOtpRequest, VerifyUserRequest,
+    server::auth_functions::{
+        add_api_key, get_env_variable, hash_string, load_api_keys, verify_api_key, verify_hash,
+    },
+    ApiKeys, AuthError, AuthRequest, AuthType, ChangePasswordRequest, Enable2FaRequest,
+    LoginRequest, ResetPasswordRequest, SignupRequest, VerifyOtpRequest, VerifyUserRequest,
 };
-use std::time::Duration;
+use clap::{Parser, Subcommand};
+
+use std::{sync::RwLock, time::Duration};
 
 use actix_web::*;
 
 use actix_identity::IdentityMiddleware;
 use actix_session::{config::PersistentSession, storage::RedisSessionStore, SessionMiddleware};
+use redis::Commands;
+
+#[derive(Parser)]
+#[clap(name = "AuthServer", version = "1.0", author = "You")]
+struct Cli {
+    #[clap(subcommand)]
+    command: Option<CliArguments>,
+}
+
+#[derive(Subcommand)]
+enum CliArguments {
+    AddApiKey {
+        #[clap(long)]
+        app_name: String,
+        #[clap(long)]
+        auth_key: String,
+    },
+}
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    // Generate the list of routes in your Leptos App
+    let cli = Cli::parse();
 
-    let secret_key = get_secret_key();
     let redis_connection_string =
         get_env_variable("REDIS_CONNECTION_STRING").expect("Connection string not set!");
+
+    match &cli.command {
+        Some(CliArguments::AddApiKey { app_name, auth_key }) => {
+            let client = redis::Client::open(redis_connection_string.clone()).unwrap();
+            let mut con = client.get_connection().unwrap();
+            let admin_key: String = con.get("admin_key").unwrap();
+            if verify_hash(auth_key, &admin_key).unwrap() {
+                let api_key = add_api_key(app_name).await.expect("Error adding api key!");
+                println!("New API Key: {}", api_key);
+            } else {
+                println!("Invalid ADMIN_KEY!");
+            }
+            return Ok(());
+        }
+        None => {
+            println!("Starting server on port 8080");
+        }
+    }
+
+    let secret_key = get_secret_key();
+
+    // Load in th
+    let client = redis::Client::open(redis_connection_string.clone()).unwrap();
+    let mut con = client.get_connection().unwrap();
+    let admin_key = hash_string(&get_env_variable("ADMIN_KEY").unwrap())
+        .await
+        .unwrap();
+    let _: () = con.set("admin_key", admin_key).unwrap();
+
     let store = RedisSessionStore::new(redis_connection_string)
         .await
         .unwrap();
 
-    println!("Starting server on port 8080");
+    let api_keys = web::Data::new(ApiKeys {
+        api_keys: RwLock::new(load_api_keys().await.unwrap()),
+    });
 
     HttpServer::new(move || {
         App::new()
+            .app_data(api_keys.clone())
             .wrap(
                 IdentityMiddleware::builder()
                     .login_deadline(Some(Duration::new(259200, 0)))
@@ -44,6 +97,7 @@ async fn main() -> std::io::Result<()> {
             .service(auth::logout)
             .service(auth::get_user_from_session)
             .service(auth_request)
+            .service(reload_api_keys)
     })
     .bind(("0.0.0.0", 8080))?
     .run()
@@ -58,12 +112,29 @@ fn get_secret_key() -> Key {
 async fn auth_request(
     auth_payload: web::Json<AuthRequest>,
     request: HttpRequest,
+    api_keys: web::Data<ApiKeys>,
 ) -> Result<HttpResponse, AuthError> {
     let request_type = request
         .headers()
         .get("X-Request-Type")
         .and_then(|v| v.to_str().ok())
         .ok_or(AuthError::InvalidRequest)?;
+
+    let api_key = request
+        .headers()
+        .get("X-Api-Key")
+        .and_then(|v| v.to_str().ok())
+        .ok_or(AuthError::InvalidRequest)?;
+
+    let app_name = request
+        .headers()
+        .get("X-App-Name")
+        .and_then(|v| v.to_str().ok())
+        .ok_or(AuthError::InvalidRequest)?;
+
+    if !verify_api_key(String::from(app_name), String::from(api_key), &api_keys).await? {
+        return Err(AuthError::InvalidCredentials);
+    }
 
     let AuthRequest { username, data } = auth_payload.into_inner();
 
@@ -112,4 +183,34 @@ async fn auth_request(
     };
 
     Ok(response)
+}
+
+// Refresh API keys
+#[post("/internal/reload_api_keys")]
+async fn reload_api_keys(
+    api_keys: web::Data<ApiKeys>,
+    request: HttpRequest,
+) -> Result<HttpResponse, AuthError> {
+    let admin_key = request
+        .headers()
+        .get("X-Admin-Key")
+        .and_then(|v| v.to_str().ok())
+        .ok_or(AuthError::InvalidRequest)?;
+
+    let redis_connection_string =
+        get_env_variable("REDIS_CONNECTION_STRING").expect("Connection string not set!");
+
+    let client = redis::Client::open(redis_connection_string.clone()).unwrap();
+    let mut con = client.get_connection().unwrap();
+    let stored_admin_key: String = con.get("admin_key").unwrap();
+
+    // Checks basic encryption against env key
+    if verify_hash(&admin_key.to_string(), &stored_admin_key).unwrap() {
+        return Err(AuthError::InvalidCredentials);
+    }
+
+    // Refresh all admin keys
+    api_keys.refresh_keys(load_api_keys().await.unwrap());
+
+    Ok(HttpResponse::Ok().json(String::from("API keys reloaded")))
 }

@@ -1,9 +1,12 @@
 use core::{fmt, str::FromStr};
+use std::{collections::HashMap, sync::RwLock};
 
 use actix_web::{http::StatusCode, HttpResponse, ResponseError};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use server::auth_functions::*;
+use std::sync::Arc;
+use thiserror::Error;
 
 pub mod auth;
 pub mod db;
@@ -184,6 +187,43 @@ impl AuthType {
             "logout" => AuthType::Logout,
             _ => AuthType::Invalid,
         }
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum DBError {
+    #[error("User not found: {0}")]
+    NotFound(String),
+    #[error("Internal server error: {0}")]
+    InternalServerError(#[from] diesel::result::Error),
+    #[error("Error: {0}")]
+    Error(String),
+    #[error("Database connection error: {0}")]
+    ConnectionError(#[from] diesel::ConnectionError),
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct UserInfo {
+    pub username: String,
+    pub first_name: String,
+    pub last_name: String,
+    pub email: String,
+    pub pass_hash: String,
+}
+
+pub struct ApiKeys {
+    pub api_keys: RwLock<HashMap<String, Arc<String>>>,
+}
+
+impl ApiKeys {
+    pub fn get_app_api_key(&self, app_name: &String) -> Option<Arc<String>> {
+        self.api_keys.read().unwrap().get(app_name).cloned()
+    }
+
+    pub fn refresh_keys(&self, api_keys: HashMap<String, Arc<String>>) {
+        let mut guard = self.api_keys.write().unwrap();
+
+        *guard = api_keys;
     }
 }
 

@@ -1,24 +1,15 @@
 use crate::db::models::{DBUser, NewDBUser};
 use crate::db::schema::{self};
+use crate::{DBError, UserInfo};
 use chrono::{DateTime, Utc};
-use diesel::pg::PgConnection;
 use diesel::{prelude::*, select};
-use dotenvy::dotenv;
 use schema::users::dsl::*;
-use std::env;
 
+use super::db_helper::establish_connection;
 use super::schema::users;
 
-pub fn establish_connection() -> PgConnection {
-    dotenv().ok();
-
-    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    PgConnection::establish(&database_url)
-        .unwrap_or_else(|_| panic!("Error connecting to {}", database_url))
-}
-
-pub fn create_db_user(user_info: crate::auth::UserInfo) -> Result<DBUser, diesel::result::Error> {
-    let mut conn = establish_connection();
+pub fn create_db_user(user_info: UserInfo) -> Result<DBUser, DBError> {
+    let mut conn = establish_connection()?;
     let new_user = NewDBUser {
         first_name: &user_info.first_name,
         last_name: &user_info.last_name,
@@ -34,11 +25,11 @@ pub fn create_db_user(user_info: crate::auth::UserInfo) -> Result<DBUser, diesel
         .values(&new_user)
         .returning(DBUser::as_returning())
         .get_result(&mut conn)
+        .map_err(|err| DBError::Error(format!("Error creating user {}", err)))
 }
 
-pub fn get_user_from_username(uname: &String) -> Result<Option<DBUser>, diesel::result::Error> {
-    use schema::users::dsl::*;
-    let mut connection = establish_connection();
+pub fn get_user_from_username(uname: &String) -> Result<Option<DBUser>, DBError> {
+    let mut connection = establish_connection()?;
 
     users
         .filter(username.eq(uname))
@@ -46,25 +37,25 @@ pub fn get_user_from_username(uname: &String) -> Result<Option<DBUser>, diesel::
         .select(DBUser::as_select())
         .first(&mut connection)
         .optional()
+        .map_err(DBError::from)
 }
 
-pub fn unlock_db_user(uname: &String) -> Result<(), diesel::result::Error> {
-    use schema::users::dsl::*;
-    let mut connection = establish_connection();
+pub fn unlock_db_user(uname: &String) -> Result<(), DBError> {
+    let mut connection = establish_connection()?;
 
     diesel::update(users.filter(username.eq(uname)))
         .set((locked.eq(false), pass_retries.eq(0)))
         .returning(DBUser::as_returning())
-        .get_result(&mut connection)?;
+        .get_result(&mut connection)
+        .map_err(DBError::from)?;
 
     Ok(())
 }
 
 // Increments password retries and returns if the user is locked or not
 // Should probably move this logic to the db_helper for consistency
-pub fn increment_db_password_tries(uname: &String) -> Result<bool, diesel::result::Error> {
-    use schema::users::dsl::*;
-    let mut connection = establish_connection();
+pub fn increment_db_password_tries(uname: &String) -> Result<bool, DBError> {
+    let mut connection = establish_connection()?;
     let current_time =
         select(diesel::dsl::now).get_result::<std::time::SystemTime>(&mut connection)?;
 
@@ -109,12 +100,8 @@ pub fn increment_db_password_tries(uname: &String) -> Result<bool, diesel::resul
     Ok(true)
 }
 
-pub fn add_2fa_for_db_user(
-    uname: &String,
-    two_ftoken: &String,
-) -> Result<(), diesel::result::Error> {
-    use schema::users::dsl::*;
-    let mut connection = establish_connection();
+pub fn add_2fa_for_db_user(uname: &String, two_ftoken: &String) -> Result<(), DBError> {
+    let mut connection = establish_connection()?;
 
     diesel::update(users.filter(username.eq(uname)))
         .set((two_factor.eq(true), two_factor_token.eq(two_ftoken)))
@@ -124,48 +111,42 @@ pub fn add_2fa_for_db_user(
     Ok(())
 }
 
-pub fn set_db_user_as_verified(uname: &String) -> Result<DBUser, diesel::result::Error> {
-    let mut connection = establish_connection();
+pub fn set_db_user_as_verified(uname: &String) -> Result<DBUser, DBError> {
+    let mut connection = establish_connection()?;
 
     diesel::update(users.filter(username.eq(uname)))
         .set(verified.eq(true))
         .returning(DBUser::as_returning())
         .get_result(&mut connection)
+        .map_err(DBError::from)
 }
 
-pub fn update_db_username(
-    uname: &String,
-    new_uname: &String,
-) -> Result<DBUser, diesel::result::Error> {
-    use schema::users::dsl::*;
-    let mut connection = establish_connection();
+pub fn update_db_username(uname: &String, new_uname: &String) -> Result<DBUser, DBError> {
+    let mut connection = establish_connection()?;
 
     diesel::update(users.filter(username.eq(uname)))
         .set(username.eq(new_uname))
         .returning(DBUser::as_returning())
         .get_result(&mut connection)
+        .map_err(DBError::from)
 }
 
-pub fn update_db_password(
-    uname: &String,
-    new_pass: &String,
-) -> Result<DBUser, diesel::result::Error> {
-    use schema::users::dsl::*;
-
-    let mut connection = establish_connection();
+pub fn update_db_password(uname: &String, new_pass: &String) -> Result<DBUser, DBError> {
+    let mut connection = establish_connection()?;
 
     diesel::update(users.filter(username.eq(uname)))
         .set(pass_hash.eq(new_pass))
         .returning(DBUser::as_returning())
         .get_result(&mut connection)
+        .map_err(DBError::from)
 }
 
-pub fn delete_db_user(uname: &String) -> Result<usize, diesel::result::Error> {
-    use schema::users::dsl::*;
+pub fn delete_db_user(uname: &String) -> Result<usize, DBError> {
+    let mut connection = establish_connection()?;
 
-    let mut connection = establish_connection();
-
-    diesel::delete(users.filter(username.eq(uname))).execute(&mut connection)
+    diesel::delete(users.filter(username.eq(uname)))
+        .execute(&mut connection)
+        .map_err(DBError::from)
 }
 
 #[cfg(test)]
@@ -174,7 +155,6 @@ pub mod test_db {
     use chrono::{DateTime, Utc};
 
     use crate::{
-        auth::UserInfo,
         db::{
             reset_token_table::{
                 delete_db_reset_token, get_reset_token_from_db, save_reset_token_to_db,
@@ -187,6 +167,7 @@ pub mod test_db {
                 save_verification_token_to_db,
             },
         },
+        UserInfo,
     };
 
     use super::create_db_user;
