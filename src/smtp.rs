@@ -67,7 +67,8 @@ pub fn generate_reset_email_body(reset_token: &String, first_name: &String) -> S
 }
 
 pub fn generate_welcome_email_body(first_name: &String, verification_token: &String) -> String {
-    let uri = get_env_variable("REDIRECT_URL").expect("REDIRECT_URL not set!");
+    let uri = get_env_variable("REDIRECT_URL").expect("REDIRECT_URL is unset!");
+    let app_name = get_env_variable("APP_NAME").expect("APP NAME is unset!");
     let verification_link = format!("{}/verify/{}", uri, verification_token);
     // HTML shamelessly generated with Chat-GPT. Adapted to a maud template
     html! {
@@ -112,7 +113,7 @@ pub fn generate_welcome_email_body(first_name: &String, verification_token: &Str
             div class="container" {
                 h1 {"Welcome!"}
                 p{ "Hi " (first_name) "!"}
-                p{"Welcome to Leptos Auth. Its great having you!"}
+                p{"Welcome to " (app_name) ". Its great having you!"}
                 p{"Click the link below to confirm your email!"}
                 a class="btn" href={ (verification_link) } {
                     "Confirm Email"
@@ -127,9 +128,10 @@ pub fn send_email(email: &String, subject: String, email_body: String, first_nam
     use crate::server::auth_functions::get_env_variable;
 
     let from_email = get_env_variable("FROM_EMAIL").expect("FROM_EMAIL is unset!");
-    let smtp_key = get_env_variable("SMTP_KEY").expect("SMTP_KEY must be set");
+    let smtp_key = get_env_variable("SMTP_KEY").expect("SMTP_KEY is unset!");
+    let app_name = get_env_variable("APP_NAME").expect("APP_NAME is unset!");
     let email = Message::builder()
-        .from(format!("Leptos Auth <{from_email}>").parse().unwrap())
+        .from(format!("{app_name} <{from_email}>").parse().unwrap())
         .to(format!("{first_name} <{email}>").parse().unwrap())
         .subject(subject)
         .multipart(
