@@ -8,7 +8,7 @@ use crate::{DBError, User, UserInfo};
 
 use std::env;
 
-use super::{models::ApiKey, reset_token_table::*, users_db::*, verification_tokens_table::*};
+use super::{reset_token_table::*, users_db::*, verification_tokens_table::*};
 
 pub fn establish_connection() -> Result<diesel::PgConnection, DBError> {
     dotenv().ok();

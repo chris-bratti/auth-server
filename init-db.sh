@@ -1,4 +1,5 @@
 #!/bin/sh
+
 # Creates database if it doesn't already exist
 init_db() {
     echo "Creating databse ${DATABASE_NAME}"
@@ -19,10 +20,8 @@ echo "Parsing command"
 
 if [[ $# -gt 0 ]]; then
     echo "Running with command: $@"
-    # Pass the arguments to the Rust application
     exec /app/auth-server "$@"
 else
-    # Default behavior: Initialize the database and start the server
     init_db
     echo "Starting server..."
     exec /app/auth-server

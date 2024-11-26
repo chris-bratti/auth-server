@@ -30,6 +30,6 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
 
 CREATE TABLE IF NOT EXISTS api_keys (
     id SERIAL PRIMARY KEY,
-    app_name text NOT NULL,
+    app_name text NOT NULL UNIQUE,
     api_key text NOT NULL
 );

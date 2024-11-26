@@ -6,7 +6,7 @@ services:
     image: auth-server:latest
     container_name: auth-server
     networks:
-      - leptos_network
+      - auth_network
     ports:
       - 3000:3000
     environment:
@@ -31,7 +31,7 @@ services:
     container_name: redis-cache
     image: redis:latest
     networks:
-      - leptos_network
+      - auth_network
     ports:
       - 6379:6379
     restart: unless-stopped
@@ -45,7 +45,7 @@ services:
     image: postgres:16
     container_name: leptos_postgres
     networks:
-      - leptos_network
+      - auth_network
     restart: always
     shm_size: 128mb
     volumes:
@@ -63,4 +63,4 @@ services:
       start_period: 5s
 
 networks:
-  leptos_network:
+  auth_network:

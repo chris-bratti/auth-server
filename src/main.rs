@@ -7,7 +7,7 @@ use auth_server::{
 };
 use clap::{Parser, Subcommand};
 
-use std::time::Duration;
+use std::{sync::RwLock, time::Duration};
 
 use actix_web::*;
 
@@ -27,8 +27,6 @@ enum Commands {
         #[clap(long)]
         app_name: String,
         #[clap(long)]
-        api_key: String,
-        #[clap(long)]
         auth_key: String,
     },
 }
@@ -40,22 +38,17 @@ async fn main() -> std::io::Result<()> {
     let cli = Cli::parse();
 
     match &cli.command {
-        Some(Commands::AddApiKey {
-            app_name,
-            api_key,
-            auth_key,
-        }) => {
-            if *auth_key == get_env_variable("ADMIN_KEY").expect("Error getting ADMIN_KEY") {
-                add_api_key(app_name, api_key)
-                    .await
-                    .expect("Error adding api key!");
+        Some(Commands::AddApiKey { app_name, auth_key }) => {
+            if *auth_key == get_env_variable("ADMIN_KEY").unwrap() {
+                let api_key = add_api_key(app_name).await.expect("Error adding api key!");
+                println!("New API Key: {}", api_key);
             } else {
                 println!("Invalid ADMIN_KEY!");
             }
             return Ok(());
         }
         None => {
-            println!("Starting server...");
+            println!("Starting server on port 8080");
         }
     }
 
@@ -66,9 +59,9 @@ async fn main() -> std::io::Result<()> {
         .await
         .unwrap();
 
-    println!("Starting server on port 8080");
-
-    let api_keys = web::Data::new(load_api_keys().await.unwrap());
+    let api_keys = web::Data::new(ApiKeys {
+        api_keys: RwLock::new(load_api_keys().await.unwrap()),
+    });
 
     HttpServer::new(move || {
         App::new()
@@ -90,6 +83,7 @@ async fn main() -> std::io::Result<()> {
             .service(auth::logout)
             .service(auth::get_user_from_session)
             .service(auth_request)
+            .service(reload_api_keys)
     })
     .bind(("0.0.0.0", 8080))?
     .run()
@@ -175,4 +169,27 @@ async fn auth_request(
     };
 
     Ok(response)
+}
+
+// Refresh API keys
+#[post("/internal/reload_api_keys")]
+async fn reload_api_keys(
+    api_keys: web::Data<ApiKeys>,
+    request: HttpRequest,
+) -> Result<HttpResponse, AuthError> {
+    let admin_key = request
+        .headers()
+        .get("X-Admin-Key")
+        .and_then(|v| v.to_str().ok())
+        .ok_or(AuthError::InvalidRequest)?;
+
+    // Checks basic encryption against env key
+    if admin_key != get_env_variable("ADMIN_KEY").unwrap() {
+        return Err(AuthError::InvalidCredentials);
+    }
+
+    // Refresh all admin keys
+    api_keys.refresh_keys(load_api_keys().await.unwrap());
+
+    Ok(HttpResponse::Ok().json(String::from("API keys reloaded")))
 }

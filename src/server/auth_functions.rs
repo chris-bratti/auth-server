@@ -1,5 +1,5 @@
 use core::{option::Option::None, result::Result::Ok};
-use std::env;
+use std::{collections::HashMap, env};
 
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 
@@ -15,14 +15,12 @@ use argon2::{
     Argon2,
 };
 use dotenvy::dotenv;
+use std::sync::Arc;
 
+use crate::{db::api_keys_table::get_api_keys, Claims};
 use crate::{
     db::{api_keys_table::add_new_api_key, db_helper::*},
     ApiKeys, AuthError, EncryptionKey,
-};
-use crate::{
-    db::{api_keys_table::get_api_keys, models::ApiKey},
-    Claims,
 };
 use totp_rs::{Algorithm, Secret, TOTP};
 
@@ -248,26 +246,27 @@ pub async fn validate_pending_token(
     }
 }
 
-pub async fn load_api_keys() -> Result<ApiKeys, AuthError> {
+pub async fn load_api_keys() -> Result<HashMap<String, Arc<String>>, AuthError> {
     let api_keys = get_api_keys()
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?
         .unwrap_or_default()
         .into_iter()
-        .map(|k| (k.app_name, k.api_key))
+        .map(|k| (k.app_name, Arc::new(k.api_key)))
         .collect();
 
-    Ok(ApiKeys { api_keys })
+    Ok(api_keys)
 }
 
-pub async fn add_api_key(app_name: &String, api_key: &String) -> Result<(), AuthError> {
-    let hash = hash_string(api_key)
+pub async fn add_api_key(app_name: &String) -> Result<String, AuthError> {
+    let api_key = generate_token();
+    let hash = hash_string(&api_key)
         .await
         .map_err(|_| AuthError::Error("Failed to hash api key".to_string()))?;
 
     add_new_api_key(app_name, &hash)
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
-    Ok(())
+    Ok(api_key)
 }
 
 pub async fn verify_api_key(
