@@ -14,7 +14,7 @@
 - HTTPS
 - API key authentication
 
-### Easy to user
+### Easy to use
 - Easy two factor authentication enrollment with QR code based secrets
 - Password reset capabilities - generates a secure reset token sent to user's email
 - Persistent session storage using Actix Web & Redis - user's sessions are saved with persistent session cookies to avoid repeated authentication
