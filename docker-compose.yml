@@ -20,6 +20,7 @@ services:
       AUTH_LEPTOS_URL: ${AUTH_LEPTOS_URL}
       PGPASSWORD: ${MASTER_PASS}
       REDIS_CONNECTION_STRING: "redis://redis-cache:6379"
+      ADMIN_KEY: "${ADMIN_KEY}"
     restart: unless-stopped
     depends_on:
       redis:
