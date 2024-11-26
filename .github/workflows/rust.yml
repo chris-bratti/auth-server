@@ -30,6 +30,9 @@ jobs:
           echo "LOG_KEY=\"${{ secrets.ENCRYPTION_KEY }}\"" >> .env
           echo "AUTH_LEPTOS_URL=http://localhost:3000/" >> .env
           echo "ADMIN_KEY=\"${{ secrets.ENCRYPTION_KEY }}\"" >> .env
+          mkdir certs
+          echo "test" > certs/private.pem
+          echo "test" > certs/cert.pem
         working-directory: rec_temp
 
       - name: Install postgres (Linux)
