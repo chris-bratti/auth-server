@@ -60,10 +60,10 @@ jobs:
         working-directory: rec_temp
         
       - name: Test
-        run: cargo test --verbose --features ssr
+        run: cargo test --verbose
         working-directory: rec_temp
 
-      - name: Clleanup
+      - name: Cleanup
         run: |
           rm -rf .env
         working-directory: rec_temp
