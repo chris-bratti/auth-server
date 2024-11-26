@@ -27,7 +27,7 @@
 
 ## Endpoints
 
-Check out the [endpoints.md](https://raw.githubusercontent.com/chris-bratti/auth-server/master/endpoints.md) file for documentation on the various endpoints
+Check out the [endpoints.md](https://github.com/chris-bratti/auth-server/blob/master/endpoints.md) file for documentation on the various endpoints
 
 ## Dockerized!
 
