@@ -488,7 +488,6 @@ dependencies = [
  "thiserror 2.0.3",
  "tokio",
  "totp-rs",
- "wasm-bindgen",
 ]
 
 [[package]]

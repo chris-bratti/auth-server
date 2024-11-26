@@ -9,7 +9,7 @@ pub fn generate_reset_email_body(reset_token: &String, first_name: &String) -> S
     // The recipient's name. We might obtain this from a form or their email address.
     // Create the html we want to send.
 
-    let uri = get_env_variable("AUTH_LEPTOS_URL").expect("AUTH_LEPTOS_URL not set!");
+    let uri = get_env_variable("REDIRECT_URL").expect("REDIRECT_URL not set!");
     let reset_link = format!("{}/reset/{}", uri, reset_token);
 
     // HTML shamelessly generated with Chat-GPT. Adapted to a maud template
@@ -67,7 +67,7 @@ pub fn generate_reset_email_body(reset_token: &String, first_name: &String) -> S
 }
 
 pub fn generate_welcome_email_body(first_name: &String, verification_token: &String) -> String {
-    let uri = get_env_variable("AUTH_LEPTOS_URL").expect("AUTH_LEPTOS_URL not set!");
+    let uri = get_env_variable("REDIRECT_URL").expect("REDIRECT_URL not set!");
     let verification_link = format!("{}/verify/{}", uri, verification_token);
     // HTML shamelessly generated with Chat-GPT. Adapted to a maud template
     html! {
