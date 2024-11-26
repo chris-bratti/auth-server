@@ -47,13 +47,14 @@ pub fn get_env_variable(variable: &str) -> Option<String> {
 }
 
 pub fn get_totp_config(username: &String, token: &String) -> TOTP {
+    let app_name = get_env_variable("APP_NAME").expect("APP_NAME is unset!");
     TOTP::new(
         Algorithm::SHA1,
         6,
         1,
         30,
         Secret::Raw(token.as_bytes().to_vec()).to_bytes().unwrap(),
-        Some("Auth Leptos".to_string()),
+        Some(app_name),
         username.to_string(),
     )
     .unwrap()

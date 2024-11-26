@@ -22,6 +22,7 @@ services:
       REDIRECT_URL: ${REDIRECT_URL}
       REDIS_CONNECTION_STRING: "redis://auth-redis:6379"
       ADMIN_KEY: "${ADMIN_KEY}"
+      APP_NAME: "${APP_NAME}"
     restart: unless-stopped
     depends_on:
       redis:

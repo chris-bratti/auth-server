@@ -23,8 +23,12 @@ pub fn does_user_exist(username: &String) -> Result<bool, DBError> {
     Ok(db_user.is_some())
 }
 
-pub fn enable_2fa_for_user(username: &String, encrypted_token: &String) -> Result<(), DBError> {
-    add_2fa_for_db_user(username, encrypted_token)
+pub fn enable_2fa_for_user(username: &String) -> Result<(), DBError> {
+    enable_2fa_for_db_user(username)
+}
+
+pub fn add_2fa_token_for_user(username: &String, tf_token: &String) -> Result<(), DBError> {
+    set_2fa_token_for_db_user(username, tf_token)
 }
 
 pub fn get_user_2fa_token(username: &String) -> Result<Option<String>, DBError> {

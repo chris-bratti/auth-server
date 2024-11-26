@@ -25,6 +25,10 @@
 - Database initialization and migrations supported via Diesel
 - Automated DB bootstrapping - `init-db.sh` and `init.sql` files automate database, user, and table creation!
 
+### Fast
+- Rust app, so I think I'm supposed to say "Blazingly fast", right?
+- In my testing (Intel i7-13700H, 16GB ram, Ubuntu Linux), response times stay consistently under 100ms in the `release` build
+
 ## Endpoints
 
 Check out the [endpoints.md](https://github.com/chris-bratti/auth-server/blob/master/endpoints.md) file for documentation on the various endpoints
@@ -153,7 +157,7 @@ $ cargo run -- add-api-key --app-name app_name --auth-key adminkey
 The server saves API keys to the database and loads them into an in-memory cache on server startup. **API key validation only happens against the in-memory cache**. In order to refresh the API keys, you can hit an internal endpoint:
 
 ```
-POST `https://localhost:8080/internal/reloadkeys
+POST `https://localhost:8080/internal/reload-keys
 --header 'X-Admin-Key: adminkey'
 ```
 
@@ -166,7 +170,7 @@ Using the `ADMIN_KEY` for the server. The app will then reload all the API keys 
 
 ## Libraries, Frameworks, and Technologies
 ### A list of the libraries and frameworks used in this project
-- [Actix Web](https://github.com/actix/actix-web) (via Leptos integration) - a powerful, pragmatic, and extremely fast web framework for Rust
+- [Actix Web](https://github.com/actix/actix-web) - a powerful, pragmatic, and extremely fast web framework for Rust
 - [Diesel](https://github.com/diesel-rs/diesel) - a safe, extensible ORM and Query Builder for Rust
 - [PostgreSQL](https://www.postgresql.org/) - a powerful, open source object-relational database system 
 - [Redis](https://github.com/redis/redis) - a key-value based in-memory database

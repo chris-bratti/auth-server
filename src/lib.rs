@@ -277,7 +277,6 @@ pub struct VerifyOtpRequest {
 
 #[derive(Serialize, Deserialize)]
 pub struct Enable2FaRequest {
-    two_factor_token: String,
     otp: String,
     enable_2fa_token: String,
 }

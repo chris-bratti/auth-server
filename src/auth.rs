@@ -422,6 +422,15 @@ pub async fn handle_generate_2fa(username: String) -> Result<HttpResponse, AuthE
     let (qr_code, token) = create_2fa_for_user(&username)
         .await
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
+
+    let encrypted_token = encrypt_string(&token, EncryptionKey::TwoFactorKey)
+        .await
+        .expect("Error encrypting token");
+
+    add_2fa_token_for_user(&username, &encrypted_token).map_err(|_| {
+        AuthError::InternalServerError("Error saving token to database".to_string())
+    })?;
+
     let enable_2fa_token = generate_pending_token(&username, "enable_2fa".to_string())
         .await
         .map_err(|_| AuthError::InternalServerError("Error creating pending_token".to_string()))?;
@@ -437,7 +446,6 @@ pub async fn handle_enable_2fa(
     info: Enable2FaRequest,
 ) -> Result<HttpResponse, AuthError> {
     let Enable2FaRequest {
-        two_factor_token,
         otp,
         enable_2fa_token,
     } = info;
@@ -455,18 +463,17 @@ pub async fn handle_enable_2fa(
         .await
         .map_err(|_| AuthError::TOTPError)?;
 
-    let totp = get_totp_config(&username, &two_factor_token);
+    let totp = get_totp(&username)
+        .await
+        .expect("Error validating token")
+        .trim()
+        .to_string();
 
-    let generated_token = totp.generate_current().expect("Error generating token");
-
-    if generated_token != otp {
+    if otp != totp {
         return Err(AuthError::TOTPError);
     }
 
-    let encrypted_token = encrypt_string(&two_factor_token, EncryptionKey::TwoFactorKey)
-        .await
-        .expect("Error encrypting token");
-    enable_2fa_for_user(&username, &encrypted_token)
+    enable_2fa_for_user(&username)
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
     Ok(HttpResponse::Ok().json(AuthResponse::<()> {

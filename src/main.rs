@@ -214,7 +214,7 @@ async fn auth_request(
 }
 
 // Internal endpoint to refresh Api keys, requires a valid admin key
-#[post("/internal/reload_api_keys")]
+#[post("/internal/reload-keys")]
 async fn reload_api_keys(
     api_keys: web::Data<ApiKeys>,
     request: HttpRequest,

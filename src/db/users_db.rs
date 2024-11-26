@@ -100,11 +100,22 @@ pub fn increment_db_password_tries(uname: &String) -> Result<bool, DBError> {
     Ok(true)
 }
 
-pub fn add_2fa_for_db_user(uname: &String, two_ftoken: &String) -> Result<(), DBError> {
+pub fn enable_2fa_for_db_user(uname: &String) -> Result<(), DBError> {
     let mut connection = establish_connection()?;
 
     diesel::update(users.filter(username.eq(uname)))
-        .set((two_factor.eq(true), two_factor_token.eq(two_ftoken)))
+        .set(two_factor.eq(true))
+        .returning(DBUser::as_returning())
+        .get_result(&mut connection)?;
+
+    Ok(())
+}
+
+pub fn set_2fa_token_for_db_user(uname: &String, tf_token: &String) -> Result<(), DBError> {
+    let mut connection = establish_connection()?;
+
+    diesel::update(users.filter(username.eq(uname)))
+        .set(two_factor_token.eq(tf_token))
         .returning(DBUser::as_returning())
         .get_result(&mut connection)?;
 

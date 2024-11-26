@@ -295,7 +295,7 @@ Internal routes for admin use, use the `X-Admin-Key` header to authenticate agai
 
 Request
 ```
-POST /internal/reload_api_keys HTTP/1.1
+POST /internal/reload-keys HTTP/1.1
 Host: localhost:8080
 X-Admin-Key: examplepassword
 ```
