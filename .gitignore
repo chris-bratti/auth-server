@@ -17,3 +17,7 @@ playwright/.cache/
 rustc-ice-*
 
 .vscode
+
+*.pem
+
+**/certs/**
