@@ -23,7 +23,7 @@ pub enum AuthError {
     Error(String),
     TOTPError,
     AccountLocked,
-    InvalidRequest,
+    InvalidRequest(String),
 }
 
 impl ResponseError for AuthError {
@@ -46,7 +46,7 @@ impl ResponseError for AuthError {
             AuthError::AccountLocked => StatusCode::UNAUTHORIZED,
             AuthError::TOTPError => StatusCode::UNAUTHORIZED,
             AuthError::Error(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            AuthError::InvalidRequest => StatusCode::BAD_REQUEST,
+            AuthError::InvalidRequest(_) => StatusCode::BAD_REQUEST,
         };
 
         HttpResponse::build(status_code).json(body)
@@ -81,8 +81,8 @@ impl fmt::Display for AuthError {
             AuthError::AccountLocked => {
                 write!(f, "Your account has been locked due to invalid attempts. Please try again later or reset your password")
             }
-            AuthError::InvalidRequest => {
-                write!(f, "Invalid auth request")
+            AuthError::InvalidRequest(error) => {
+                write!(f, "Invalid auth request: {error}")
             }
         }
     }
@@ -116,8 +116,8 @@ impl fmt::Debug for AuthError {
             AuthError::AccountLocked => {
                 write!(f, "Account locked")
             }
-            AuthError::InvalidRequest => {
-                write!(f, "Invalid request")
+            AuthError::InvalidRequest(error) => {
+                write!(f, "Invalid request: {error}")
             }
         }
     }

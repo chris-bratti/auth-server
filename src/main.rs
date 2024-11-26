@@ -8,6 +8,7 @@ use auth_server::{
     LoginRequest, ResetPasswordRequest, SignupRequest, VerifyOtpRequest, VerifyUserRequest,
 };
 use clap::{Parser, Subcommand};
+use openssl::ssl::{SslAcceptor, SslFiletype, SslMethod};
 
 use std::{sync::RwLock, time::Duration};
 
@@ -17,6 +18,7 @@ use actix_identity::IdentityMiddleware;
 use actix_session::{config::PersistentSession, storage::RedisSessionStore, SessionMiddleware};
 use redis::Commands;
 
+// Parses CLI arguments
 #[derive(Parser)]
 #[clap(name = "AuthServer", version = "1.0", author = "You")]
 struct Cli {
@@ -24,6 +26,7 @@ struct Cli {
     command: Option<CliArguments>,
 }
 
+// Struct for CLI arguments
 #[derive(Subcommand)]
 enum CliArguments {
     AddApiKey {
@@ -41,7 +44,9 @@ async fn main() -> std::io::Result<()> {
     let redis_connection_string =
         get_env_variable("REDIS_CONNECTION_STRING").expect("Connection string not set!");
 
+    // Matches against a given command
     match &cli.command {
+        // If app was run with add-api-key command, checks auth_key and adds new api key
         Some(CliArguments::AddApiKey { app_name, auth_key }) => {
             let client = redis::Client::open(redis_connection_string.clone()).unwrap();
             let mut con = client.get_connection().unwrap();
@@ -54,6 +59,7 @@ async fn main() -> std::io::Result<()> {
             }
             return Ok(());
         }
+        // If no command given, starts the server
         None => {
             println!("Starting server on port 8080");
         }
@@ -61,7 +67,7 @@ async fn main() -> std::io::Result<()> {
 
     let secret_key = get_secret_key();
 
-    // Load in th
+    // Sets the admin_key for the session
     let client = redis::Client::open(redis_connection_string.clone()).unwrap();
     let mut con = client.get_connection().unwrap();
     let admin_key = hash_string(&get_env_variable("ADMIN_KEY").unwrap())
@@ -69,13 +75,24 @@ async fn main() -> std::io::Result<()> {
         .unwrap();
     let _: () = con.set("admin_key", admin_key).unwrap();
 
+    // Creates new session store for Actix, using Redis as a backend
     let store = RedisSessionStore::new(redis_connection_string)
         .await
         .unwrap();
 
+    // Loads API keys from the database into a global shared state
     let api_keys = web::Data::new(ApiKeys {
         api_keys: RwLock::new(load_api_keys().await.unwrap()),
     });
+
+    // Builds SSL using private key and cert
+    let mut builder = SslAcceptor::mozilla_intermediate(SslMethod::tls()).unwrap();
+    builder
+        .set_private_key_file("certs/private.pem", SslFiletype::PEM)
+        .unwrap();
+    builder
+        .set_certificate_chain_file("certs/cert.pem")
+        .unwrap();
 
     HttpServer::new(move || {
         App::new()
@@ -99,7 +116,7 @@ async fn main() -> std::io::Result<()> {
             .service(auth_request)
             .service(reload_api_keys)
     })
-    .bind(("0.0.0.0", 8080))?
+    .bind_openssl("0.0.0.0:8080", builder)?
     .run()
     .await
 }
@@ -108,6 +125,7 @@ fn get_secret_key() -> Key {
     return Key::generate();
 }
 
+// Main Auth endpoint, requires a request_type, api_key, and app_name
 #[post("/auth")]
 async fn auth_request(
     auth_payload: web::Json<AuthRequest>,
@@ -118,19 +136,25 @@ async fn auth_request(
         .headers()
         .get("X-Request-Type")
         .and_then(|v| v.to_str().ok())
-        .ok_or(AuthError::InvalidRequest)?;
+        .ok_or(AuthError::InvalidRequest(
+            "invalid header value".to_string(),
+        ))?;
 
     let api_key = request
         .headers()
         .get("X-Api-Key")
         .and_then(|v| v.to_str().ok())
-        .ok_or(AuthError::InvalidRequest)?;
+        .ok_or(AuthError::InvalidRequest(
+            "invalid header value".to_string(),
+        ))?;
 
     let app_name = request
         .headers()
         .get("X-App-Name")
         .and_then(|v| v.to_str().ok())
-        .ok_or(AuthError::InvalidRequest)?;
+        .ok_or(AuthError::InvalidRequest(
+            "invalid header value".to_string(),
+        ))?;
 
     if !verify_api_key(String::from(app_name), String::from(api_key), &api_keys).await? {
         return Err(AuthError::InvalidCredentials);
@@ -141,51 +165,55 @@ async fn auth_request(
     let response = match AuthType::from(request_type) {
         AuthType::Login => {
             let data: LoginRequest = serde_json::from_value(data.expect("Missing data field"))
-                .map_err(|_| AuthError::InvalidRequest)?;
+                .map_err(|_| AuthError::InvalidRequest("invalid request body".to_string()))?;
             auth::handle_login(username, data, request).await?
         }
         AuthType::Signup => {
             let data: SignupRequest = serde_json::from_value(data.expect("Missing data field"))
-                .map_err(|_| AuthError::InvalidRequest)?;
+                .map_err(|_| AuthError::InvalidRequest("invalid request body".to_string()))?;
             auth::handle_signup(username, data, request).await?
         }
         AuthType::ChangePassword => {
             let data: ChangePasswordRequest =
                 serde_json::from_value(data.expect("Missing data field"))
-                    .map_err(|_| AuthError::InvalidRequest)?;
+                    .map_err(|_| AuthError::InvalidRequest("invalid request body".to_string()))?;
             auth::handle_change_password(username, data).await?
         }
         AuthType::VerifyUser => {
             let data: VerifyUserRequest = serde_json::from_value(data.expect("Missing data field"))
-                .map_err(|_| AuthError::InvalidRequest)?;
+                .map_err(|_| AuthError::InvalidRequest("invalid request body".to_string()))?;
             auth::handle_verify_user(username, data).await?
         }
         AuthType::ResetPassword => {
             let data: ResetPasswordRequest =
                 serde_json::from_value(data.expect("Missing data field"))
-                    .map_err(|_| AuthError::InvalidRequest)?;
+                    .map_err(|_| AuthError::InvalidRequest("invalid request body".to_string()))?;
             auth::handle_reset_password(username, data).await?
         }
         AuthType::RequestPasswordReset => auth::handle_request_password_reset(username).await?,
         AuthType::VerifyOtp => {
             let data: VerifyOtpRequest = serde_json::from_value(data.expect("Missing data field"))
-                .map_err(|_| AuthError::InvalidRequest)?;
+                .map_err(|_| AuthError::InvalidRequest("invalid request body".to_string()))?;
             auth::handle_verify_otp(username, data, request).await?
         }
         AuthType::Generate2Fa => auth::handle_generate_2fa(username).await?,
         AuthType::Enable2Fa => {
             let data: Enable2FaRequest = serde_json::from_value(data.expect("Missing data field"))
-                .map_err(|_| AuthError::InvalidRequest)?;
+                .map_err(|_| AuthError::InvalidRequest("invalid request body".to_string()))?;
             auth::handle_enable_2fa(username, data).await?
         }
         AuthType::Logout => todo!(),
-        AuthType::Invalid => return Err(AuthError::InvalidRequest),
+        AuthType::Invalid => {
+            return Err(AuthError::InvalidRequest(
+                "invalid request type".to_string(),
+            ))
+        }
     };
 
     Ok(response)
 }
 
-// Refresh API keys
+// Internal endpoint to refresh Api keys, requires a valid admin key
 #[post("/internal/reload_api_keys")]
 async fn reload_api_keys(
     api_keys: web::Data<ApiKeys>,
@@ -195,7 +223,9 @@ async fn reload_api_keys(
         .headers()
         .get("X-Admin-Key")
         .and_then(|v| v.to_str().ok())
-        .ok_or(AuthError::InvalidRequest)?;
+        .ok_or(AuthError::InvalidRequest(
+            "invalid header value".to_string(),
+        ))?;
 
     let redis_connection_string =
         get_env_variable("REDIS_CONNECTION_STRING").expect("Connection string not set!");
@@ -205,7 +235,7 @@ async fn reload_api_keys(
     let stored_admin_key: String = con.get("admin_key").unwrap();
 
     // Checks basic encryption against env key
-    if verify_hash(&admin_key.to_string(), &stored_admin_key).unwrap() {
+    if !verify_hash(&admin_key.to_string(), &stored_admin_key).unwrap() {
         return Err(AuthError::InvalidCredentials);
     }
 
