@@ -25,6 +25,10 @@
 - Database initialization and migrations supported via Diesel
 - Automated DB bootstrapping - `init-db.sh` and `init.sql` files automate database, user, and table creation!
 
+## Endpoints
+
+Check out the [endpoints.md](https://raw.githubusercontent.com/chris-bratti/auth-server/master/endpoints.md) file for documentation on the various endpoints
+
 ## Dockerized!
 
 This project can be run in a docker container! And it has everything you need to connect and bootstrap your postgres database.
@@ -32,7 +36,7 @@ This project can be run in a docker container! And it has everything you need to
 ### 1. Download the docker-compose
 
 ```
-$ wget https://raw.githubusercontent.com/rhysbratti/auth_leptos/master/docker-compose.yml
+$ wget https://raw.githubusercontent.com/chris-bratti/auth-server/master/docker-compose.yml
 ```
 
 ### 2. Set your env values
@@ -40,7 +44,7 @@ $ wget https://raw.githubusercontent.com/rhysbratti/auth_leptos/master/docker-co
 Download the template `.env` file by running:
 
 ```
-$ wget https://raw.githubusercontent.com/rhysbratti/auth_leptos/master/example.env
+$ wget https://raw.githubusercontent.com/chris-bratti/auth-server/master/example.env
 
 $ mv example.env .env
 ```
