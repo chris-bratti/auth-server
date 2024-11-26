@@ -29,6 +29,7 @@ jobs:
           echo "SMTP_ENCRYPTION_KEY=\"${{ secrets.ENCRYPTION_KEY }}\"" > .env
           echo "LOG_KEY=\"${{ secrets.ENCRYPTION_KEY }}\"" >> .env
           echo "AUTH_LEPTOS_URL=http://localhost:3000/" >> .env
+          echo "ADMIN_KEY=\"${{ secrets.ENCRYPTION_KEY }}\"" >> .env
         working-directory: rec_temp
 
       - name: Install postgres (Linux)
