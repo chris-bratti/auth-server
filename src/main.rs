@@ -1,7 +1,9 @@
 use actix_web::cookie::Key;
 use auth_server::{
     auth::{self},
-    server::auth_functions::{add_api_key, get_env_variable, load_api_keys, verify_api_key},
+    server::auth_functions::{
+        add_api_key, get_env_variable, hash_string, load_api_keys, verify_api_key, verify_hash,
+    },
     ApiKeys, AuthError, AuthRequest, AuthType, ChangePasswordRequest, Enable2FaRequest,
     LoginRequest, ResetPasswordRequest, SignupRequest, VerifyOtpRequest, VerifyUserRequest,
 };
@@ -13,16 +15,17 @@ use actix_web::*;
 
 use actix_identity::IdentityMiddleware;
 use actix_session::{config::PersistentSession, storage::RedisSessionStore, SessionMiddleware};
+use redis::Commands;
 
 #[derive(Parser)]
 #[clap(name = "AuthServer", version = "1.0", author = "You")]
 struct Cli {
     #[clap(subcommand)]
-    command: Option<Commands>,
+    command: Option<CliArguments>,
 }
 
 #[derive(Subcommand)]
-enum Commands {
+enum CliArguments {
     AddApiKey {
         #[clap(long)]
         app_name: String,
@@ -33,13 +36,17 @@ enum Commands {
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    // Generate the list of routes in your Leptos App
-
     let cli = Cli::parse();
 
+    let redis_connection_string =
+        get_env_variable("REDIS_CONNECTION_STRING").expect("Connection string not set!");
+
     match &cli.command {
-        Some(Commands::AddApiKey { app_name, auth_key }) => {
-            if *auth_key == get_env_variable("ADMIN_KEY").unwrap() {
+        Some(CliArguments::AddApiKey { app_name, auth_key }) => {
+            let client = redis::Client::open(redis_connection_string.clone()).unwrap();
+            let mut con = client.get_connection().unwrap();
+            let admin_key: String = con.get("admin_key").unwrap();
+            if verify_hash(auth_key, &admin_key).unwrap() {
                 let api_key = add_api_key(app_name).await.expect("Error adding api key!");
                 println!("New API Key: {}", api_key);
             } else {
@@ -53,8 +60,15 @@ async fn main() -> std::io::Result<()> {
     }
 
     let secret_key = get_secret_key();
-    let redis_connection_string =
-        get_env_variable("REDIS_CONNECTION_STRING").expect("Connection string not set!");
+
+    // Load in th
+    let client = redis::Client::open(redis_connection_string.clone()).unwrap();
+    let mut con = client.get_connection().unwrap();
+    let admin_key = hash_string(&get_env_variable("ADMIN_KEY").unwrap())
+        .await
+        .unwrap();
+    let _: () = con.set("admin_key", admin_key).unwrap();
+
     let store = RedisSessionStore::new(redis_connection_string)
         .await
         .unwrap();
@@ -183,8 +197,15 @@ async fn reload_api_keys(
         .and_then(|v| v.to_str().ok())
         .ok_or(AuthError::InvalidRequest)?;
 
+    let redis_connection_string =
+        get_env_variable("REDIS_CONNECTION_STRING").expect("Connection string not set!");
+
+    let client = redis::Client::open(redis_connection_string.clone()).unwrap();
+    let mut con = client.get_connection().unwrap();
+    let stored_admin_key: String = con.get("admin_key").unwrap();
+
     // Checks basic encryption against env key
-    if admin_key != get_env_variable("ADMIN_KEY").unwrap() {
+    if verify_hash(&admin_key.to_string(), &stored_admin_key).unwrap() {
         return Err(AuthError::InvalidCredentials);
     }
 
