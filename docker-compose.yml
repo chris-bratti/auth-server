@@ -6,20 +6,21 @@ services:
     image: auth-server:latest
     container_name: auth-server
     networks:
-      - auth_network
+      - auth
     ports:
-      - 3000:3000
+      - 8080:8080
+    volumes:
+      - path/to/certs:/app/certs
     environment:
-      DATABASE_URL: postgres://${MASTER_USER}:${MASTER_PASS}@leptos_postgres/${DATABASE_NAME}
+      DATABASE_URL: postgres://${MASTER_USER}:${MASTER_PASS}@auth-postgres/${DATABASE_NAME}
       DATABASE_NAME: ${DATABASE_NAME}
       FROM_EMAIL: ${FROM_EMAIL}
       SMTP_KEY: "${SMTP_KEY}"
       TWO_FACTOR_KEY: "${TWO_FACTOR_KEY}"
       SMTP_ENCRYPTION_KEY: "${SMTP_ENCRYPTION_KEY}"
       LOG_KEY: "${LOG_KEY}"
-      AUTH_LEPTOS_URL: ${AUTH_LEPTOS_URL}
-      PGPASSWORD: ${MASTER_PASS}
-      REDIS_CONNECTION_STRING: "redis://redis-cache:6379"
+      REDIRECT_URL: ${REDIRECT_URL}
+      REDIS_CONNECTION_STRING: "redis://auth-redis:6379"
       ADMIN_KEY: "${ADMIN_KEY}"
     restart: unless-stopped
     depends_on:
@@ -29,10 +30,10 @@ services:
         condition: service_healthy
 
   redis:
-    container_name: redis-cache
+    container_name: auth-redis
     image: redis:latest
     networks:
-      - auth_network
+      - auth
     ports:
       - 6379:6379
     restart: unless-stopped
@@ -44,9 +45,9 @@ services:
 
   db:
     image: postgres:16
-    container_name: leptos_postgres
+    container_name: auth-postgres
     networks:
-      - auth_network
+      - auth
     restart: always
     shm_size: 128mb
     volumes:
@@ -64,4 +65,4 @@ services:
       start_period: 5s
 
 networks:
-  auth_network:
+  auth:

@@ -8,7 +8,6 @@ actix-files = { version = "0.6.6"}
 actix-web = { version = "4.9.0", features = ["macros", "openssl"] }
 console_error_panic_hook = "0.1.7"
 http = { version = "1.1.0"}
-wasm-bindgen = "=0.2.95"
 actix-session = { version = "0.10.1", features = ["redis-session"]}
 actix-identity = {version = "0.8.0"}
 diesel = { version = "2.2.4", features = ["postgres"]}
