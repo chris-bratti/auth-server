@@ -23,6 +23,7 @@ services:
       REDIS_CONNECTION_STRING: "redis://auth-redis:6379"
       ADMIN_KEY: "${ADMIN_KEY}"
       APP_NAME: "${APP_NAME}"
+      JWT_KEY: "${JWT_KEY}"
     restart: unless-stopped
     depends_on:
       redis:
