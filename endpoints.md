@@ -1,6 +1,6 @@
 # API Endpoints
 
-There are only two endpoints in the application. The `/auth` is the main authentication endpoint
+This API features a single endpoint for authentication requests
 
 ## Auth
 Endpoint to handle all auth requests. Use the `X-Request-Type` header to indicate the type of auth request
@@ -284,22 +284,4 @@ Response
     "message": "OTP was successful",
     "response": null
 }
-```
-
-## Internal
-
-Internal routes for admin use, use the `X-Admin-Key` header to authenticate against the `ADMIN_KEY` passed in during server start
-
-### Reload keys
-**Internal endpoint to refresh API key cache**
-
-Request
-```
-POST /internal/reload-keys HTTP/1.1
-Host: localhost:8080
-X-Admin-Key: examplepassword
-```
-Response
-```
-"API keys reloaded"
 ```

@@ -24,6 +24,7 @@ services:
       ADMIN_KEY: "${ADMIN_KEY}"
       APP_NAME: "${APP_NAME}"
       JWT_KEY: "${JWT_KEY}"
+      REDIS_KEY: "${REDIS_KEY}"
     restart: unless-stopped
     depends_on:
       redis:
