@@ -3,7 +3,7 @@ use std::{collections::HashMap, env};
 
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 
-use actix_web::{web, Result};
+use actix_web::Result;
 use aes_gcm::{
     aead::{Aead, AeadCore, KeyInit},
     Aes256Gcm,
@@ -20,7 +20,7 @@ use std::sync::Arc;
 use crate::{db::api_keys_table::get_api_keys, Claims};
 use crate::{
     db::{api_keys_table::add_new_api_key, db_helper::*},
-    ApiKeys, AuthError, EncryptionKey,
+    AuthError, EncryptionKey,
 };
 use totp_rs::{Algorithm, Secret, TOTP};
 
@@ -268,19 +268,6 @@ pub async fn add_api_key(app_name: &String) -> Result<String, AuthError> {
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
     Ok(api_key)
-}
-
-pub async fn verify_api_key(
-    app_name: String,
-    api_key: String,
-    api_keys: &web::Data<ApiKeys>,
-) -> Result<bool, AuthError> {
-    api_keys
-        .get_app_api_key(&app_name)
-        .map_or(Ok(false), |hashed_key| {
-            verify_hash(&api_key, &hashed_key)
-                .map_err(|_| AuthError::InternalServerError("Error validating hash".to_string()))
-        })
 }
 
 #[cfg(test)]
