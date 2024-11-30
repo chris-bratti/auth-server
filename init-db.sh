@@ -22,7 +22,7 @@ if [ $# -gt 0 ]; then
     echo "Running with command: $@"
     exec /app/auth-server "$@"
 else
-    init_db
+    #init_db
     echo "Starting server..."
     exec /app/auth-server
 fi

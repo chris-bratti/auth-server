@@ -29,7 +29,7 @@ use regex::Regex;
 use lazy_static::lazy_static;
 
 lazy_static! {
-    static ref JWT_SECRET: String = generate_token();
+    static ref JWT_SECRET: String = get_env_variable("JWT_KEY").expect("JWT_KEY is unset!");
 }
 
 pub fn get_env_variable(variable: &str) -> Option<String> {
