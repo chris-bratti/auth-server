@@ -153,16 +153,6 @@ Similar to Docker:
 $ cargo run -- add-api-key --app-name app_name --auth-key adminkey
 ```
 
-### Loading API keys into the app
-The server saves API keys to the database and loads them into an in-memory cache on server startup. **API key validation only happens against the in-memory cache**. In order to refresh the API keys, you can hit an internal endpoint:
-
-```
-POST `https://localhost:8080/internal/reload-keys
---header 'X-Admin-Key: adminkey'
-```
-
-Using the `ADMIN_KEY` for the server. The app will then reload all the API keys from the database and update the cache.
-
 ## Contributions
 
 **This repo is open to contributions** - feel free to open a PR for any changes, updates, or refactors as you see fit. I am *quite* open to feedback on this project - if you have some good ideas I would love to see them :)
