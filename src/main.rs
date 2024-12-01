@@ -85,8 +85,7 @@ async fn main() -> std::io::Result<()> {
     );
 
     // Sets the admin_key for the session
-    let client = redis::Client::open(redis_connection_string.clone()).unwrap();
-    let mut con = client.get_connection().unwrap();
+    let mut con = REDIS_CLIENT.get_connection().unwrap();
     let admin_key = hash_string(&get_env_variable("ADMIN_KEY").unwrap())
         .await
         .unwrap();

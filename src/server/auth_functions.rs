@@ -15,7 +15,7 @@ use argon2::{
     Argon2,
 };
 use dotenvy::dotenv;
-use std::sync::Arc;
+use redis::Commands;
 
 use crate::{db::api_keys_table::get_api_keys, Claims};
 use crate::{
@@ -247,12 +247,12 @@ pub async fn validate_pending_token(
     }
 }
 
-pub async fn load_api_keys() -> Result<HashMap<String, Arc<String>>, AuthError> {
+pub async fn load_api_keys() -> Result<HashMap<String, String>, AuthError> {
     let api_keys = get_api_keys()
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?
         .unwrap_or_default()
         .into_iter()
-        .map(|k| (k.app_name, Arc::new(k.api_key)))
+        .map(|k| (k.app_name, k.api_key))
         .collect();
 
     Ok(api_keys)
@@ -264,7 +264,20 @@ pub async fn add_api_key(app_name: &String) -> Result<String, AuthError> {
         .await
         .map_err(|_| AuthError::Error("Failed to hash api key".to_string()))?;
 
+    let client = redis::Client::open(
+        get_env_variable("REDIS_CONNECTION_STRING").expect("Connection string not set!"),
+    )
+    .unwrap();
+
+    let mut con = client
+        .get_connection()
+        .expect("Error getting redis connection!");
+
     add_new_api_key(app_name, &hash)
+        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
+
+    () = con
+        .hset("api_keys", app_name, &hash)
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
     Ok(api_key)
