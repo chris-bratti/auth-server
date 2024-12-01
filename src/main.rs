@@ -61,9 +61,6 @@ async fn main() -> std::io::Result<()> {
             let admin_key: String = con.get("admin_key").unwrap();
             if verify_hash(auth_key, &admin_key).unwrap() {
                 let api_key = add_api_key(app_name).await.expect("Error adding api key!");
-                load_api_keys_into_redis()
-                    .await
-                    .expect("Error loading keys into Redis!");
                 println!("New API Key: {}", api_key);
             } else {
                 println!("Invalid ADMIN_KEY!");
@@ -85,8 +82,7 @@ async fn main() -> std::io::Result<()> {
     );
 
     // Sets the admin_key for the session
-    let client = redis::Client::open(redis_connection_string.clone()).unwrap();
-    let mut con = client.get_connection().unwrap();
+    let mut con = REDIS_CLIENT.get_connection().unwrap();
     let admin_key = hash_string(&get_env_variable("ADMIN_KEY").unwrap())
         .await
         .unwrap();
