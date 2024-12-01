@@ -11,6 +11,12 @@ jobs:
     steps:
       - name: Check out the repo
         uses: actions/checkout@v4
+
+      - name: Read current version from Cargo.toml
+        id: version
+        run: |
+          version=$(grep '^version' Cargo.toml | head -n 1 | sed 's/version = "//' | sed 's/"//')
+          echo "::set-output name=current_version::$version"
       
       - name: Log in to Docker Hub
         uses: docker/login-action@f4ef78c080cd8ba55a85445d5b36e214a81df20a
@@ -30,5 +36,34 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: ${{ secrets.DOCKER_USER }}/auth-server:latest
+          tags: ${{ secrets.DOCKER_USER }}/auth-server:${{ steps.version.outputs.current_version }}
           labels: ${{ steps.meta.outputs.labels }}
+
+  bump-version:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Increment Version
+        id: bump-version
+        run: |
+          current_version=$(grep '^version' Cargo.toml | head -n 1 | sed 's/version = "//' | sed 's/"//')
+          echo "Current version: $current_version"
+
+          new_version=$(echo "$version" | awk -F '[./]' '{ printf "%d.%d.%d\n", $1, $2, $3+1 }')
+          echo "New version: $new_version"
+
+          # Update Cargo.toml
+          sed -i "s/^version = \".*\"/version = \"$new_version\"/" Cargo.toml
+
+          # Output new version
+          echo "::set-output name=new_version::$new_version"
+
+      - name: Commit and Push
+        run: |
+          git config --local user.name "github-actions[bot]"
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml
+          git commit -m "[Workflow] Version bump to ${{ steps.bump-version.outputs.new_version }}"
+          git push
