@@ -40,6 +40,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
 
   bump-version:
+    needs: push_to_registry
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -51,7 +52,7 @@ jobs:
           current_version=$(grep '^version' Cargo.toml | head -n 1 | sed 's/version = "//' | sed 's/"//')
           echo "Current version: $current_version"
 
-          new_version=$(echo "$version" | awk -F '[./]' '{ printf "%d.%d.%d\n", $1, $2, $3+1 }')
+          new_version=$(echo "$current_version" | awk -F '[./]' '{ printf "%d.%d.%d\n", $1, $2, $3+1 }')
           echo "New version: $new_version"
 
           # Update Cargo.toml
@@ -64,6 +65,7 @@ jobs:
         run: |
           git config --local user.name "github-actions[bot]"
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout master
           git add Cargo.toml
           git commit -m "[Workflow] Version bump to ${{ steps.bump-version.outputs.new_version }}"
           git push
