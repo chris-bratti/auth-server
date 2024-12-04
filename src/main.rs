@@ -4,8 +4,9 @@ use auth_server::{
     server::auth_functions::{
         add_api_key, get_env_variable, hash_string, load_api_keys, verify_hash,
     },
-    AuthError, AuthRequest, AuthType, ChangePasswordRequest, Enable2FaRequest, LoginRequest,
-    ResetPasswordRequest, SignupRequest, VerifyOtpRequest, VerifyUserRequest,
+    AuthError, AuthRequest, AuthType, ChangePasswordRequest, Enable2FaRequest, InfoResponse,
+    LoginRequest, RequestTypeResponse, ResetPasswordRequest, SignupRequest, VerifyOtpRequest,
+    VerifyUserRequest,
 };
 use clap::{Parser, Subcommand};
 use openssl::ssl::{SslAcceptor, SslFiletype, SslMethod};
@@ -126,6 +127,7 @@ async fn main() -> std::io::Result<()> {
             .service(auth::logout)
             .service(auth::get_user_from_session)
             .service(auth_request)
+            .service(get_info)
     })
     .bind_openssl("0.0.0.0:8080", builder)?
     .run()
@@ -217,6 +219,74 @@ async fn auth_request(
     };
 
     Ok(response)
+}
+
+#[get("/info")]
+async fn get_info(request: HttpRequest) -> Result<HttpResponse, AuthError> {
+    let api_key = request
+        .headers()
+        .get("X-Api-Key")
+        .and_then(|v| v.to_str().ok())
+        .ok_or(AuthError::InvalidRequest(
+            "invalid header value".to_string(),
+        ))?;
+
+    let app_name = request
+        .headers()
+        .get("X-App-Name")
+        .and_then(|v| v.to_str().ok())
+        .ok_or(AuthError::InvalidRequest(
+            "invalid header value".to_string(),
+        ))?;
+
+    if !valid_api_key(api_key, app_name)? {
+        return Err(AuthError::InvalidCredentials);
+    }
+
+    let service_types = vec![
+        RequestTypeResponse {
+            request_type: AuthType::Signup.to_string(),
+            description: "Logs a user in".to_string(),
+        },
+        RequestTypeResponse {
+            request_type: AuthType::VerifyUser.to_string(),
+            description: "Verifies a user using verification token".to_string(),
+        },
+        RequestTypeResponse {
+            request_type: AuthType::ResetPassword.to_string(),
+            description: "Resets a password using reset token".to_string(),
+        },
+        RequestTypeResponse {
+            request_type: AuthType::RequestPasswordReset.to_string(),
+            description: "Requests password reset and emails reset token to user".to_string(),
+        },
+        RequestTypeResponse {
+            request_type: AuthType::ChangePassword.to_string(),
+            description: "Changes user password given current password".to_string(),
+        },
+        RequestTypeResponse {
+            request_type: AuthType::VerifyOtp.to_string(),
+            description: "Second step of 2fa, verifies otp and logs user in".to_string(),
+        },
+        RequestTypeResponse {
+            request_type: AuthType::Generate2Fa.to_string(),
+            description: "Generates 2fa token and QR code for enabling 2fa".to_string(),
+        },
+        RequestTypeResponse {
+            request_type: AuthType::Enable2Fa.to_string(),
+            description: "Enables 2fa for user".to_string(),
+        },
+    ];
+
+    let response = InfoResponse {
+        message: "The following request types are available via the X-Request-Type header"
+            .to_string(),
+        service_types,
+    };
+
+    let json_response = serde_json::to_value(response).expect("Error parsing json!");
+
+    Ok(HttpResponse::Ok().json(json_response))
 }
 
 async fn load_api_keys_into_redis() -> Result<(), RedisError> {

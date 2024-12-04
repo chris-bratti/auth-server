@@ -56,7 +56,7 @@ impl fmt::Display for AuthError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             AuthError::InvalidCredentials => {
-                write!(f, "Invalid username or password")
+                write!(f, "Invalid credentials")
             }
             AuthError::InternalServerError(_error) => {
                 write!(f, "There was an error on our side :(")
@@ -186,6 +186,36 @@ impl AuthType {
             _ => AuthType::Invalid,
         }
     }
+}
+
+impl fmt::Display for AuthType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            AuthType::Login => write!(f, "login"),
+            AuthType::Signup => write!(f, "signup"),
+            AuthType::VerifyUser => write!(f, "verify_user"),
+            AuthType::ResetPassword => write!(f, "reset_password"),
+            AuthType::RequestPasswordReset => write!(f, "request_password_reset"),
+            AuthType::ChangePassword => write!(f, "change_password"),
+            AuthType::VerifyOtp => write!(f, "verify_otp"),
+            AuthType::Generate2Fa => write!(f, "generate_2fa"),
+            AuthType::Enable2Fa => write!(f, "enable_2fa"),
+            AuthType::Logout => write!(f, "logout"),
+            AuthType::Invalid => write!(f, "invalid"),
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+pub struct RequestTypeResponse {
+    pub request_type: String,
+    pub description: String,
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+pub struct InfoResponse {
+    pub message: String,
+    pub service_types: Vec<RequestTypeResponse>,
 }
 
 #[derive(Error, Debug)]
