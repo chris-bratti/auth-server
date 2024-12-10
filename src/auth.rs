@@ -4,6 +4,7 @@ use actix_identity::Identity;
 use actix_web::{
     get, http::StatusCode, post, web, HttpMessage, HttpRequest, HttpResponse, Responder, Result,
 };
+use redis::Commands;
 use tokio::task;
 
 use crate::smtp::generate_reset_email_body;
@@ -17,6 +18,15 @@ use crate::{
     LoginRequest,
 };
 use crate::{AuthResponse, Generate2FaResponse, LoginResponse, NewPasswordRequest, UserInfo};
+
+use lazy_static::lazy_static;
+
+lazy_static! {
+    static ref REDIS_CLIENT: redis::Client = redis::Client::open(
+        get_env_variable("REDIS_CONNECTION_STRING").expect("Connection string not set!")
+    )
+    .unwrap();
+}
 
 /// Server function to log in user
 pub async fn handle_login(
@@ -64,7 +74,7 @@ pub async fn handle_login(
     println!("User OTP: {}", two_factor);
 
     if two_factor {
-        let pending_token = generate_pending_token(&username, "verify_otp".to_string())
+        let pending_token = generate_jwt_token(&username, "verify_otp".to_string(), 600)
             .await
             .map_err(|_| {
                 AuthError::InternalServerError(String::from("Error generating pending token"))
@@ -431,7 +441,7 @@ pub async fn handle_generate_2fa(username: String) -> Result<HttpResponse, AuthE
         AuthError::InternalServerError("Error saving token to database".to_string())
     })?;
 
-    let enable_2fa_token = generate_pending_token(&username, "enable_2fa".to_string())
+    let enable_2fa_token = generate_jwt_token(&username, "enable_2fa".to_string(), 600)
         .await
         .map_err(|_| AuthError::InternalServerError("Error creating pending_token".to_string()))?;
     Ok(HttpResponse::Ok().json(web::Json(Generate2FaResponse {
@@ -515,6 +525,25 @@ pub async fn handle_verify_otp(
         message: "OTP was successful",
         response: None,
     }))
+}
+
+pub async fn handle_authorization_token(
+    authorization_code: String,
+    client_id: &String,
+) -> Result<bool, AuthError> {
+    let mut con = REDIS_CLIENT.get_connection()?;
+
+    let stored_token: String = con.hget("auth_codes", &client_id)?;
+
+    if authorization_code != stored_token {
+        return Ok(false);
+    }
+
+    // Append the username onto the end of the stored token so it can be validated against
+
+    // Create access_token (10 min timeout) and refresh_token (30 day timeout) JWTs
+
+    Ok(true)
 }
 
 #[post("/logout")]

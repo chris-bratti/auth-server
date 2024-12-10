@@ -1,6 +1,7 @@
 use core::{option::Option::None, result::Result::Ok};
 use std::{collections::HashMap, env};
 
+use base64::{engine::general_purpose, Engine as _};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 
 use actix_web::Result;
@@ -33,6 +34,13 @@ use lazy_static::lazy_static;
 
 lazy_static! {
     static ref JWT_SECRET: String = get_env_variable("JWT_KEY").expect("JWT_KEY is unset!");
+}
+
+lazy_static! {
+    static ref REDIS_CLIENT: redis::Client = redis::Client::open(
+        get_env_variable("REDIS_CONNECTION_STRING").expect("Connection string not set!")
+    )
+    .unwrap();
 }
 
 pub fn get_env_variable(variable: &str) -> Option<String> {
@@ -143,9 +151,6 @@ pub fn verify_reset_token(username: &String, reset_token: &String) -> Result<boo
     let token_hash =
         crate::db::db_helper::get_reset_hash(username).map_err(|_| AuthError::InvalidToken)?;
 
-    println!("Token hash: {}", &token_hash);
-    println!("Given toekn: {}", &reset_token);
-
     verify_hash(reset_token, &token_hash).map_err(|_| AuthError::InvalidToken)
 }
 
@@ -167,10 +172,8 @@ pub async fn encrypt_string(
     let key = Key::<Aes256Gcm>::from_slice(&encryption_key.as_bytes());
 
     let cipher = Aes256Gcm::new(&key);
-    let nonce = Aes256Gcm::generate_nonce(&mut OsRng); // 96-bits; unique per message
+    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
     let ciphertext = cipher.encrypt(&nonce, data.as_bytes())?;
-
-    //let plaintext = cipher.decrypt(&nonce, ciphertext.as_ref())?;
 
     let mut encrypted_data: Vec<u8> = nonce.to_vec();
     encrypted_data.extend_from_slice(&ciphertext);
@@ -202,16 +205,17 @@ pub async fn decrypt_string(
     Ok(String::from_utf8(plaintext).expect("failed to convert vector of bytes to string"))
 }
 
-pub async fn generate_pending_token(
-    username: &String,
+pub async fn generate_jwt_token(
+    token_id: &String,
     scope: String,
+    timeout: i64,
 ) -> Result<String, jsonwebtoken::errors::Error> {
     let utc_timestamp = chrono::Utc::now().timestamp();
 
     let claims = Claims {
-        exp: utc_timestamp + 600, // JWT is good for 10 minutes
+        exp: utc_timestamp + timeout,
         scope,
-        sub: username.clone(),
+        sub: token_id.clone(),
     };
 
     let token = encode(
@@ -240,8 +244,7 @@ pub async fn validate_pending_token(
         return Err(AuthError::InvalidCredentials);
     }
 
-    let user_exists = does_user_exist(&token.sub)
-        .map_err(|_| AuthError::InternalServerError("Error searching for user".to_string()))?;
+    let user_exists = does_user_exist(&token.sub)?;
 
     if token.scope == scope && user_exists {
         Ok(())
@@ -287,14 +290,33 @@ pub async fn add_api_key(app_name: &String) -> Result<String, AuthError> {
         .get_connection()
         .expect("Error getting redis connection!");
 
-    add_new_api_key(app_name, &hash)
-        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
+    add_new_api_key(app_name, &hash)?;
 
-    () = con
-        .hset("api_keys", app_name, &hash)
-        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
+    () = con.hset("api_keys", app_name, &hash)?;
 
     Ok(api_key)
+}
+
+pub async fn client_info_is_valid(encoded_client_info: String) -> Result<bool, AuthError> {
+    let encoded_client_info = encoded_client_info.replace("Basic ", "").trim().to_owned();
+
+    let decoded_client = general_purpose::STANDARD
+        .decode(encoded_client_info)
+        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
+
+    let client_as_string = String::from_utf8(decoded_client)
+        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
+
+    if let Some((client_id, client_secret)) = client_as_string.split_once(':') {
+        let mut con = REDIS_CLIENT.get_connection()?;
+
+        let stored_key: String = con.hget("oauth_client", client_id)?;
+
+        Ok(stored_key
+            == decrypt_string(client_secret.to_string(), EncryptionKey::TwoFactorKey).await?)
+    } else {
+        Err(AuthError::InvalidCredentials)
+    }
 }
 
 #[cfg(test)]

@@ -3,14 +3,16 @@ use auth_server::{
     auth::{self},
     db::oauth_clients_table::add_new_oauth_client,
     server::auth_functions::{
-        add_api_key, generate_token, get_env_variable, hash_string, load_api_keys,
-        load_oauth_clients, verify_hash,
+        add_api_key, client_info_is_valid, generate_token, get_env_variable, hash_string,
+        load_api_keys, load_oauth_clients, verify_hash,
     },
-    AuthError, AuthRequest, AuthType, ChangePasswordRequest, Enable2FaRequest, LoginRequest,
-    OAuthRequest, RegisterNewClientRequest, RegisterNewClientResponse, ReloadOauthClientsResponse,
-    ResetPasswordRequest, SignupRequest, VerifyOtpRequest, VerifyUserRequest,
+    AuthError, AuthRequest, AuthType, ChangePasswordRequest, Enable2FaRequest, GrantType,
+    LoginRequest, OAuthRequest, OAuthResponse, RegisterNewClientRequest, RegisterNewClientResponse,
+    ReloadOauthClientsResponse, ResetPasswordRequest, SignupRequest, TokenRequestForm,
+    VerifyOtpRequest, VerifyUserRequest,
 };
 use clap::{Parser, Subcommand};
+use lettre::transport::smtp::commands::Auth;
 use openssl::ssl::{SslAcceptor, SslFiletype, SslMethod};
 
 use std::time::Duration;
@@ -133,6 +135,7 @@ async fn main() -> std::io::Result<()> {
             .service(auth_request)
             .service(register_oauth_client)
             .service(load_clients_into_redis)
+            .service(oauth_request)
     })
     .bind_openssl("0.0.0.0:8080", builder)?
     .run()
@@ -226,12 +229,69 @@ async fn auth_request(
     Ok(response)
 }
 
-#[post("/oauth")]
-async fn oauth_request(
-    oauth_request: web::Query<OAuthRequest>,
+#[post("/token")]
+async fn get_token(
+    form: web::Form<TokenRequestForm>,
     request: HttpRequest,
 ) -> Result<HttpResponse, AuthError> {
-    Ok(HttpResponse::Ok().finish())
+    let auth_header = request
+        .headers()
+        .get("Authorization")
+        .and_then(|v| v.to_str().ok())
+        .ok_or(AuthError::InvalidRequest(
+            "invalid header value".to_string(),
+        ))?;
+
+    if !client_info_is_valid(auth_header.to_string()).await? {
+        return Err(AuthError::InvalidCredentials);
+    }
+
+    let TokenRequestForm {
+        grant_type,
+        refresh_token,
+        authorization_code,
+    } = form.into_inner();
+
+    match GrantType::from(grant_type.as_str()) {
+        GrantType::AuthorizationCode => {
+            let authorization_code = authorization_code.ok_or_else(|| {
+                AuthError::InvalidRequest("Missing authorization_code".to_string())
+            })?;
+        }
+        GrantType::RefreshToken => todo!(),
+        GrantType::Invalid => todo!(),
+    }
+
+    Err(AuthError::AccountLocked)
+}
+
+#[post("/oauth")]
+async fn oauth_request(oauth_request: web::Query<OAuthRequest>) -> Result<HttpResponse, AuthError> {
+    //Simulate login
+
+    let OAuthRequest { client_id, state } = oauth_request.into_inner();
+
+    let mut con = REDIS_CLIENT
+        .get_connection()
+        .expect("Error getting redis connection!");
+
+    let cached_key: Option<String> = con.hget("oauth_clients", &client_id)?;
+
+    if cached_key.is_none() {
+        return Err(AuthError::InvalidCredentials);
+    }
+
+    let authorization_code = generate_token();
+
+    //() = con.set_ex(&client_id, &authorization_code, 600)?;
+    () = con.hset("auth_codes", &client_id, &authorization_code)?;
+    () = con.hexpire("auth_codes", 20, redis::ExpireOption::NONE, &client_id)?;
+
+    Ok(HttpResponse::Ok().json(OAuthResponse {
+        success: true,
+        authorization_code,
+        state,
+    }))
 }
 
 /*

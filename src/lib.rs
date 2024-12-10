@@ -1,6 +1,7 @@
 use core::{fmt, str::FromStr};
 
 use actix_web::{http::StatusCode, HttpResponse, ResponseError};
+use redis::RedisError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use server::auth_functions::*;
@@ -22,6 +23,30 @@ pub enum AuthError {
     TOTPError,
     AccountLocked,
     InvalidRequest(String),
+}
+
+impl From<RedisError> for AuthError {
+    fn from(err: RedisError) -> Self {
+        AuthError::InternalServerError(err.to_string())
+    }
+}
+
+impl From<DBError> for AuthError {
+    fn from(err: DBError) -> Self {
+        AuthError::InternalServerError(err.to_string())
+    }
+}
+
+impl From<aes_gcm::Error> for AuthError {
+    fn from(err: aes_gcm::Error) -> Self {
+        AuthError::InternalServerError(err.to_string())
+    }
+}
+
+impl From<jsonwebtoken::errors::Error> for AuthError {
+    fn from(err: jsonwebtoken::errors::Error) -> Self {
+        AuthError::InternalServerError(err.to_string())
+    }
 }
 
 impl ResponseError for AuthError {
@@ -58,8 +83,8 @@ impl fmt::Display for AuthError {
             AuthError::InvalidCredentials => {
                 write!(f, "Invalid username or password")
             }
-            AuthError::InternalServerError(_error) => {
-                write!(f, "There was an error on our side :(")
+            AuthError::InternalServerError(error) => {
+                write!(f, "{error}")
             }
             AuthError::InvalidToken => {
                 write!(f, "Token invalid or expired")
@@ -154,6 +179,22 @@ pub struct User {
     two_factor: bool,
     verified: bool,
     encrypted_email: String,
+}
+
+pub enum GrantType {
+    AuthorizationCode,
+    RefreshToken,
+    Invalid,
+}
+
+impl GrantType {
+    pub fn from(grant_type: &str) -> GrantType {
+        match grant_type {
+            "authorization_code" => GrantType::AuthorizationCode,
+            "refresh_token" => GrantType::RefreshToken,
+            _ => GrantType::Invalid,
+        }
+    }
 }
 
 pub enum AuthType {
@@ -315,4 +356,27 @@ pub struct ReloadOauthClientsResponse {
 pub struct OAuthRequest {
     pub client_id: String,
     pub state: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct OAuthResponse {
+    pub success: bool,
+    pub authorization_code: String,
+    pub state: String,
+}
+
+#[derive(Deserialize)]
+pub struct TokenRequestForm {
+    pub grant_type: String,
+    pub refresh_token: Option<String>,
+    pub authorization_code: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct AuthorizationCodeResponse {
+    pub success: bool,
+    pub access_token: String,
+    pub refresh_token: String,
+    pub username: String,
+    pub expiry: i64,
 }
