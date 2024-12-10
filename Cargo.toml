@@ -33,4 +33,5 @@ thiserror = {version = "2.0.3"}
 clap = {version = "4.5.21", features = ["derive"]}
 redis = "0.27.5"
 openssl = { version = "0.10" }
+base64 = "0.22.1"
 

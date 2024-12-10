@@ -33,3 +33,12 @@ CREATE TABLE api_keys (
     app_name text NOT NULL UNIQUE,
     api_key text NOT NULL
 );
+
+CREATE TABLE oauth_clients (
+    id SERIAL PRIMARY KEY,
+    app_name text NOT NULL UNIQUE,
+    contact_email text NOT NULL,
+    client_id text NOT NULL UNIQUE,
+    client_secret text NOT NULL UNIQUE,
+    redirect_url text NOT NULL
+);

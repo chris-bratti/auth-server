@@ -465,6 +465,7 @@ dependencies = [
  "actix-web",
  "aes-gcm",
  "argon2",
+ "base64 0.22.1",
  "cfg-if",
  "chrono",
  "clap",

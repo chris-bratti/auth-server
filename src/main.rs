@@ -1,10 +1,13 @@
 use actix_web::cookie::Key;
 use auth_server::{
     auth::{self},
+    db::oauth_clients_table::add_new_oauth_client,
     server::auth_functions::{
-        add_api_key, get_env_variable, hash_string, load_api_keys, verify_hash,
+        add_api_key, generate_token, get_env_variable, hash_string, load_api_keys,
+        load_oauth_clients, verify_hash,
     },
     AuthError, AuthRequest, AuthType, ChangePasswordRequest, Enable2FaRequest, LoginRequest,
+    OAuthRequest, RegisterNewClientRequest, RegisterNewClientResponse, ReloadOauthClientsResponse,
     ResetPasswordRequest, SignupRequest, VerifyOtpRequest, VerifyUserRequest,
 };
 use clap::{Parser, Subcommand};
@@ -17,6 +20,8 @@ use actix_web::*;
 use actix_identity::IdentityMiddleware;
 use actix_session::{config::PersistentSession, storage::RedisSessionStore, SessionMiddleware};
 use redis::{Commands, RedisError};
+
+use base64::{engine::general_purpose, Engine as _};
 
 // Parses CLI arguments
 #[derive(Parser)]
@@ -126,6 +131,8 @@ async fn main() -> std::io::Result<()> {
             .service(auth::logout)
             .service(auth::get_user_from_session)
             .service(auth_request)
+            .service(register_oauth_client)
+            .service(load_clients_into_redis)
     })
     .bind_openssl("0.0.0.0:8080", builder)?
     .run()
@@ -217,6 +224,129 @@ async fn auth_request(
     };
 
     Ok(response)
+}
+
+#[post("/oauth")]
+async fn oauth_request(
+    oauth_request: web::Query<OAuthRequest>,
+    request: HttpRequest,
+) -> Result<HttpResponse, AuthError> {
+    Ok(HttpResponse::Ok().finish())
+}
+
+/*
+[post("/token")]
+async fn get_token(request: HttpRequest) {
+    let auth_header = request
+        .headers()
+        .get("Authorization")
+        .and_then(|v| v.to_str().ok())
+        .ok_or(AuthError::InvalidRequest(
+            "invalid header value".to_string(),
+        ))?;
+
+    let encoded_client_info: &str = auth_header
+        .split(" ")
+        .collect::<Vec<_>>()
+        .get(1)
+        .ok_or_else(|| AuthError::InvalidCredentials)?;
+
+    let decoded_client = general_purpose::STANDARD
+        .decode(encoded_client_info)
+        .map_err(|err| AuthError::InternalServerError(err.to_string()));
+}
+*/
+
+#[post("/clients/register")]
+async fn register_oauth_client(
+    register_client_request: web::Json<RegisterNewClientRequest>,
+    request: HttpRequest,
+) -> Result<HttpResponse, AuthError> {
+    let admin_key = request
+        .headers()
+        .get("X-Admin-Key")
+        .and_then(|v| v.to_str().ok())
+        .ok_or(AuthError::InvalidRequest(
+            "invalid header value".to_string(),
+        ))?;
+
+    if admin_key != get_env_variable("ADMIN_KEY").unwrap() {
+        return Err(AuthError::InvalidCredentials);
+    }
+
+    let client_id = generate_token()
+        .get(0..8)
+        .expect("Error parsing string!")
+        .to_string();
+
+    let client_secret = generate_token();
+
+    let RegisterNewClientRequest {
+        app_name,
+        contact_email,
+        redirect_url,
+    } = register_client_request.into_inner();
+
+    let encrypted_secret = add_new_oauth_client(
+        &app_name,
+        &contact_email,
+        &client_id,
+        &client_secret,
+        &redirect_url,
+    )
+    .await
+    .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
+
+    let mut con = REDIS_CLIENT
+        .get_connection()
+        .expect("Error getting redis connection!");
+
+    () = con
+        .hset("oauth_clients", &client_id, &encrypted_secret)
+        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
+
+    //println!("Implement pubsub model");
+
+    Ok(HttpResponse::Ok().json(RegisterNewClientResponse {
+        success: true,
+        client_id,
+        client_secret,
+        redirect_url,
+    }))
+}
+
+#[post("/internal/reload-clients")]
+async fn load_clients_into_redis(request: HttpRequest) -> Result<HttpResponse, AuthError> {
+    let admin_key = request
+        .headers()
+        .get("X-Admin-Key")
+        .and_then(|v| v.to_str().ok())
+        .ok_or(AuthError::InvalidRequest(
+            "invalid header value".to_string(),
+        ))?;
+
+    if admin_key != get_env_variable("ADMIN_KEY").unwrap() {
+        return Err(AuthError::InvalidCredentials);
+    }
+
+    let oauth_clients = load_oauth_clients().await.unwrap();
+    let mut con = REDIS_CLIENT
+        .get_connection()
+        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
+
+    let mut clients_loaded = 0;
+
+    for (client_id, client_secret) in &oauth_clients {
+        () = con
+            .hset("oauth_clients", client_id, client_secret)
+            .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
+        clients_loaded = clients_loaded + 1;
+    }
+
+    Ok(HttpResponse::Ok().json(ReloadOauthClientsResponse {
+        success: true,
+        clients_loaded,
+    }))
 }
 
 async fn load_api_keys_into_redis() -> Result<(), RedisError> {

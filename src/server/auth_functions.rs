@@ -17,10 +17,13 @@ use argon2::{
 use dotenvy::dotenv;
 use redis::Commands;
 
-use crate::{db::api_keys_table::get_api_keys, Claims};
 use crate::{
     db::{api_keys_table::add_new_api_key, db_helper::*},
     AuthError, EncryptionKey,
+};
+use crate::{
+    db::{api_keys_table::get_api_keys, oauth_clients_table::get_oauth_clients},
+    Claims,
 };
 use totp_rs::{Algorithm, Secret, TOTP};
 
@@ -245,6 +248,17 @@ pub async fn validate_pending_token(
     } else {
         Err(AuthError::TOTPError)
     }
+}
+
+pub async fn load_oauth_clients() -> Result<HashMap<String, String>, AuthError> {
+    let clients = get_oauth_clients()
+        .map_err(|err| AuthError::InternalServerError(err.to_string()))?
+        .unwrap_or_default()
+        .into_iter()
+        .map(|c| (c.client_id, c.client_secret))
+        .collect();
+
+    Ok(clients)
 }
 
 pub async fn load_api_keys() -> Result<HashMap<String, String>, AuthError> {

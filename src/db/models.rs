@@ -30,6 +30,18 @@ pub struct ApiKey {
     pub api_key: String,
 }
 
+#[derive(Queryable, Selectable, Identifiable, Debug, serde::Deserialize, serde::Serialize)]
+#[diesel(table_name = crate::db::schema::oauth_clients)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct OauthClient {
+    pub id: i32,
+    pub app_name: String,
+    pub contact_email: String,
+    pub client_id: String,
+    pub client_secret: String,
+    pub redirect_url: String,
+}
+
 #[derive(Queryable, Selectable, Identifiable, Associations, Debug, PartialEq)]
 #[diesel(table_name = password_reset_tokens)]
 #[diesel(belongs_to(DBUser, foreign_key = user_id))]
@@ -84,4 +96,14 @@ pub struct NewDBUser<'a> {
 pub struct NewApiKey<'a> {
     pub app_name: &'a str,
     pub api_key: &'a str,
+}
+
+#[derive(Insertable, Debug)]
+#[diesel(table_name = oauth_clients)]
+pub struct NewOauthClient<'a> {
+    pub app_name: &'a str,
+    pub contact_email: &'a str,
+    pub client_id: &'a str,
+    pub client_secret: &'a str,
+    pub redirect_url: &'a str,
 }

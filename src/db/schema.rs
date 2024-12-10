@@ -43,6 +43,17 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    oauth_clients (id) {
+        id -> Int4,
+        app_name -> Text,
+        contact_email -> Text,
+        client_id -> Text,
+        client_secret -> Text,
+        redirect_url -> Text,
+    }
+}
+
 diesel::joinable!(password_reset_tokens -> users (user_id));
 diesel::joinable!(verification_tokens -> users (user_id));
 

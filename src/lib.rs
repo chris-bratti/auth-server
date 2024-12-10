@@ -289,3 +289,30 @@ pub struct Generate2FaResponse {
     token: String,
     enable_2fa_token: String,
 }
+
+#[derive(Serialize, Deserialize)]
+pub struct RegisterNewClientRequest {
+    pub app_name: String,
+    pub contact_email: String,
+    pub redirect_url: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct RegisterNewClientResponse {
+    pub success: bool,
+    pub client_id: String,
+    pub client_secret: String,
+    pub redirect_url: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ReloadOauthClientsResponse {
+    pub success: bool,
+    pub clients_loaded: i32,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct OAuthRequest {
+    pub client_id: String,
+    pub state: String,
+}
