@@ -16,11 +16,12 @@ use argon2::{
     Argon2,
 };
 use dotenvy::dotenv;
+use lettre::transport::smtp::commands::Auth;
 use redis::Commands;
 
 use crate::{
     db::{api_keys_table::add_new_api_key, db_helper::*},
-    AuthError, EncryptionKey,
+    AuthError, EncryptionKey, OauthClaims,
 };
 use crate::{
     db::{api_keys_table::get_api_keys, oauth_clients_table::get_oauth_clients},
@@ -205,6 +206,28 @@ pub async fn decrypt_string(
     Ok(String::from_utf8(plaintext).expect("failed to convert vector of bytes to string"))
 }
 
+pub async fn generate_oauth_token(
+    token_id: &String,
+    exp: i64,
+    username: &String,
+) -> Result<String, jsonwebtoken::errors::Error> {
+    let claims = OauthClaims {
+        exp,
+        scope: "read write".to_string(),
+        iss: "Auth Server".to_string(),
+        sub: username.clone(),
+        client_id: token_id.clone(),
+    };
+
+    let token = encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(JWT_SECRET.as_ref()),
+    )?;
+
+    Ok(token)
+}
+
 pub async fn generate_jwt_token(
     token_id: &String,
     scope: String,
@@ -297,7 +320,7 @@ pub async fn add_api_key(app_name: &String) -> Result<String, AuthError> {
     Ok(api_key)
 }
 
-pub async fn client_info_is_valid(encoded_client_info: String) -> Result<bool, AuthError> {
+pub async fn validate_client_info(encoded_client_info: String) -> Result<String, AuthError> {
     let encoded_client_info = encoded_client_info.replace("Basic ", "").trim().to_owned();
 
     let decoded_client = general_purpose::STANDARD
@@ -307,16 +330,19 @@ pub async fn client_info_is_valid(encoded_client_info: String) -> Result<bool, A
     let client_as_string = String::from_utf8(decoded_client)
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
-    if let Some((client_id, client_secret)) = client_as_string.split_once(':') {
-        let mut con = REDIS_CLIENT.get_connection()?;
+    let (client_id, client_secret) = client_as_string
+        .split_once(':')
+        .ok_or_else(|| AuthError::InvalidRequest("Bad auth header".to_string()))?;
 
-        let stored_key: String = con.hget("oauth_client", client_id)?;
+    let mut con = REDIS_CLIENT.get_connection()?;
 
-        Ok(stored_key
-            == decrypt_string(client_secret.to_string(), EncryptionKey::TwoFactorKey).await?)
-    } else {
-        Err(AuthError::InvalidCredentials)
+    let stored_key: String = con.hget("oauth_client", client_id)?;
+
+    if stored_key != decrypt_string(client_secret.to_string(), EncryptionKey::TwoFactorKey).await? {
+        return Err(AuthError::InvalidCredentials);
     }
+
+    Ok(client_id.to_string())
 }
 
 #[cfg(test)]

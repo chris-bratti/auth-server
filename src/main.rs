@@ -1,10 +1,10 @@
 use actix_web::cookie::Key;
 use auth_server::{
-    auth::{self},
+    auth::{self, handle_authorization_token},
     db::oauth_clients_table::add_new_oauth_client,
     server::auth_functions::{
-        add_api_key, client_info_is_valid, generate_token, get_env_variable, hash_string,
-        load_api_keys, load_oauth_clients, verify_hash,
+        add_api_key, generate_token, get_env_variable, hash_string, load_api_keys,
+        load_oauth_clients, validate_client_info, verify_hash,
     },
     AuthError, AuthRequest, AuthType, ChangePasswordRequest, Enable2FaRequest, GrantType,
     LoginRequest, OAuthRequest, OAuthResponse, RegisterNewClientRequest, RegisterNewClientResponse,
@@ -242,9 +242,7 @@ async fn get_token(
             "invalid header value".to_string(),
         ))?;
 
-    if !client_info_is_valid(auth_header.to_string()).await? {
-        return Err(AuthError::InvalidCredentials);
-    }
+    let client_id = validate_client_info(auth_header.to_string()).await?;
 
     let TokenRequestForm {
         grant_type,
@@ -257,6 +255,7 @@ async fn get_token(
             let authorization_code = authorization_code.ok_or_else(|| {
                 AuthError::InvalidRequest("Missing authorization_code".to_string())
             })?;
+            handle_authorization_token(authorization_code, &client_id).await?;
         }
         GrantType::RefreshToken => todo!(),
         GrantType::Invalid => todo!(),
@@ -268,6 +267,7 @@ async fn get_token(
 #[post("/oauth")]
 async fn oauth_request(oauth_request: web::Query<OAuthRequest>) -> Result<HttpResponse, AuthError> {
     //Simulate login
+    let username = "testuser123";
 
     let OAuthRequest { client_id, state } = oauth_request.into_inner();
 
@@ -284,7 +284,11 @@ async fn oauth_request(oauth_request: web::Query<OAuthRequest>) -> Result<HttpRe
     let authorization_code = generate_token();
 
     //() = con.set_ex(&client_id, &authorization_code, 600)?;
-    () = con.hset("auth_codes", &client_id, &authorization_code)?;
+    () = con.hset(
+        "auth_codes",
+        &client_id,
+        format!("{}:{}", &authorization_code, username),
+    )?;
     () = con.hexpire("auth_codes", 20, redis::ExpireOption::NONE, &client_id)?;
 
     Ok(HttpResponse::Ok().json(OAuthResponse {

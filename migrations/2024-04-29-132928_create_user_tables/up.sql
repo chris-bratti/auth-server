@@ -42,3 +42,10 @@ CREATE TABLE oauth_clients (
     client_secret text NOT NULL UNIQUE,
     redirect_url text NOT NULL
 );
+
+CREATE TABLE refresh_tokens (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER NOT NULL REFERENCES oauth_clients(id),
+    refresh_token TEXT NOT NULL,
+    username TEXT NOT NULL
+)

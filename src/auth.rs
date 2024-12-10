@@ -17,7 +17,10 @@ use crate::{
     smtp::{self, generate_welcome_email_body},
     LoginRequest,
 };
-use crate::{AuthResponse, Generate2FaResponse, LoginResponse, NewPasswordRequest, UserInfo};
+use crate::{
+    AuthResponse, AuthorizationCodeResponse, Generate2FaResponse, LoginResponse,
+    NewPasswordRequest, UserInfo,
+};
 
 use lazy_static::lazy_static;
 
@@ -530,20 +533,35 @@ pub async fn handle_verify_otp(
 pub async fn handle_authorization_token(
     authorization_code: String,
     client_id: &String,
-) -> Result<bool, AuthError> {
+) -> Result<HttpResponse, AuthError> {
     let mut con = REDIS_CLIENT.get_connection()?;
 
-    let stored_token: String = con.hget("auth_codes", &client_id)?;
+    let stored_token: Option<String> = con.hget("auth_codes", &client_id)?;
 
-    if authorization_code != stored_token {
-        return Ok(false);
+    let stored_token = stored_token.ok_or_else(|| AuthError::InvalidCredentials)?;
+
+    let (stored_auth_code, username) = stored_token.split_once(':').ok_or_else(|| {
+        AuthError::InternalServerError("Error validating token, please try again".to_string())
+    })?;
+
+    if stored_auth_code.to_string() != authorization_code {
+        return Err(AuthError::InvalidCredentials);
     }
 
-    // Append the username onto the end of the stored token so it can be validated against
+    let username = username.to_string();
+    let expiry = chrono::Utc::now().timestamp() + 600;
+    let access_token = generate_oauth_token(client_id, expiry, &username).await?;
+    let refresh_token = generate_token();
 
-    // Create access_token (10 min timeout) and refresh_token (30 day timeout) JWTs
+    task::spawn_blocking(move || todo!("Add refresh_token to DB"));
 
-    Ok(true)
+    Ok(HttpResponse::Ok().json(AuthorizationCodeResponse {
+        success: true,
+        username,
+        access_token,
+        refresh_token,
+        expiry,
+    }))
 }
 
 #[post("/logout")]

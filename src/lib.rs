@@ -318,6 +318,15 @@ struct Claims {
     sub: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct OauthClaims {
+    scope: String,
+    exp: i64,
+    sub: String,
+    iss: String,
+    client_id: String,
+}
+
 #[derive(Serialize, Deserialize)]
 struct LoginResponse {
     two_factor_enabled: bool,
