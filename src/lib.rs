@@ -9,7 +9,6 @@ use thiserror::Error;
 
 pub mod db;
 pub mod server;
-pub mod smtp;
 
 #[derive(Clone, Serialize, Deserialize)]
 pub enum AuthError {

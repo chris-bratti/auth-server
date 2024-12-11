@@ -6,17 +6,16 @@ use actix_web::{
 };
 use tokio::task;
 
-use crate::smtp::generate_reset_email_body;
+use crate::server::smtp::{generate_welcome_email_body, send_email};
+use crate::LoginRequest;
 use crate::{
     db::db_helper::*, server::auth_functions::*, AuthError, ChangePasswordRequest,
     Enable2FaRequest, EncryptionKey, ResetPasswordRequest, SignupRequest, VerifyOtpRequest,
     VerifyUserRequest,
 };
-use crate::{
-    smtp::{self, generate_welcome_email_body},
-    LoginRequest,
-};
 use crate::{AuthResponse, Generate2FaResponse, LoginResponse, NewPasswordRequest, UserInfo};
+
+use super::smtp::generate_reset_email_body;
 
 /// Server function to log in user
 pub async fn handle_login(
@@ -206,7 +205,7 @@ pub async fn handle_signup(
 
     // Send verification email
     task::spawn_blocking(move || {
-        smtp::send_email(
+        send_email(
             &email,
             "Welcome!".to_string(),
             generate_welcome_email_body(&first_name, &generated_token),
@@ -389,7 +388,7 @@ pub async fn handle_request_password_reset(
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
     task::spawn_blocking(move || {
-        smtp::send_email(
+        send_email(
             &user_email,
             "Reset Password".to_string(),
             generate_reset_email_body(&generated_token, &name),
