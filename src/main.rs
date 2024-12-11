@@ -286,8 +286,6 @@ async fn oauth_request(
 
     let OAuthRequest { client_id, state } = oauth_request.into_inner();
 
-    // Todo: Implement redirect to redirect URL
-
     let OAuthRedirect {
         authorization_code,
         state,

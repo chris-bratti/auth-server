@@ -63,16 +63,24 @@ pub async fn handle_authorization_token(
     }))
 }
 
+pub async fn handle_refresh_token(
+    db_instance: &web::Data<DbInstance>,
+    redis_client: &web::Data<Client>,
+) {
+}
+
 pub async fn handle_register_oauth_client(
     register_client_request: RegisterNewClientRequest,
     db_instance: &web::Data<DbInstance>,
     redis_client: &web::Data<Client>,
 ) -> Result<HttpResponse, AuthError> {
+    // Generate a random but short id
     let client_id = generate_token()
-        .get(0..8)
+        .get(0..10)
         .expect("Error parsing string!")
         .to_string();
 
+    // Generate longer secret
     let client_secret = generate_token();
 
     let RegisterNewClientRequest {
