@@ -13,11 +13,12 @@ use auth_server::{
         },
     },
     AuthError, AuthRequest, AuthType, ChangePasswordRequest, Enable2FaRequest, GrantType,
-    LoginRequest, OAuthRequest, RegisterNewClientRequest, ResetPasswordRequest, SignupRequest,
-    TokenRequestForm, VerifyOtpRequest, VerifyUserRequest,
+    LoginRequest, OAuthRedirect, OAuthRequest, RegisterNewClientRequest, ResetPasswordRequest,
+    SignupRequest, TokenRequestForm, VerifyOtpRequest, VerifyUserRequest,
 };
 use clap::{Parser, Subcommand};
 use openssl::ssl::{SslAcceptor, SslFiletype, SslMethod};
+use web::Redirect;
 
 use std::time::Duration;
 
@@ -55,12 +56,8 @@ async fn main() -> std::io::Result<()> {
 
     let db_instance = web::Data::new(DbInstance::new());
 
-    let redis_client = web::Data::new(
-        redis::Client::open(
-            get_env_variable("REDIS_CONNECTION_STRING").expect("Connection string not set!"),
-        )
-        .unwrap(),
-    );
+    let redis_client =
+        web::Data::new(redis::Client::open(redis_connection_string.clone()).unwrap());
 
     // Matches against a given command
     match &cli.command {
@@ -282,7 +279,7 @@ async fn get_token(
 async fn oauth_request(
     oauth_request: web::Query<OAuthRequest>,
     redis_client: web::Data<Client>,
-) -> Result<HttpResponse, AuthError> {
+) -> Result<impl Responder, AuthError> {
     // Simulate login
     // Todo: Implement Leptos for login
     let username = "testuser123".to_string();
@@ -291,7 +288,17 @@ async fn oauth_request(
 
     // Todo: Implement redirect to redirect URL
 
-    handle_request_oauth_token(client_id, username, state, &redis_client).await
+    let OAuthRedirect {
+        authorization_code,
+        state,
+        redirect_url,
+    } = handle_request_oauth_token(client_id, username, state, &redis_client).await?;
+
+    println!("Redirecting to: {redirect_url}?code={authorization_code}&state={state}");
+
+    Ok(Redirect::to(format!(
+        "{redirect_url}?code={authorization_code}&state={state}"
+    )))
 }
 
 #[post("/oauth/register")]
@@ -313,12 +320,22 @@ async fn register_oauth_client(
         return Err(AuthError::InvalidCredentials);
     }
 
-    handle_register_oauth_client(
+    let response = handle_register_oauth_client(
         register_client_request.into_inner(),
         &db_instance,
         &redis_client,
     )
-    .await
+    .await?;
+
+    tokio::spawn(async move {
+        if let Err(err) = handle_reload_oauth_clients(&db_instance, &redis_client).await {
+            eprintln!("Error reloading clients!: {err}");
+        } else {
+            println!("Clients successfully reloaded");
+        }
+    });
+
+    Ok(response)
 }
 
 #[post("/internal/reload-clients")]

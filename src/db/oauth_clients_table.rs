@@ -31,7 +31,7 @@ impl DbInstance {
             .await
             .unwrap();
 
-        let encrypted_secret = encrypt_string(c_secret, crate::EncryptionKey::TwoFactorKey)
+        let encrypted_secret = encrypt_string(c_secret, crate::EncryptionKey::OauthKey)
             .await
             .unwrap();
 
@@ -86,10 +86,9 @@ pub mod test_oauth_dbs {
             .await
             .unwrap();
 
-        let unencrypted_secret =
-            decrypt_string(&encrypted_secret, crate::EncryptionKey::TwoFactorKey)
-                .await
-                .unwrap();
+        let unencrypted_secret = decrypt_string(&encrypted_secret, crate::EncryptionKey::OauthKey)
+            .await
+            .unwrap();
 
         assert_eq!(unencrypted_secret, c_secret);
 
@@ -144,7 +143,7 @@ pub mod test_oauth_dbs {
             .await
             .unwrap();
 
-        let decrypted_token = decrypt_string(&encrypted_token, crate::EncryptionKey::TwoFactorKey)
+        let decrypted_token = decrypt_string(&encrypted_token, crate::EncryptionKey::OauthKey)
             .await
             .unwrap();
 

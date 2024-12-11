@@ -10,7 +10,7 @@ use tokio::task;
 use crate::{server::auth_functions::*, AuthError};
 
 use crate::{
-    AuthorizationCodeResponse, OAuthResponse, RegisterNewClientRequest, RegisterNewClientResponse,
+    AuthorizationCodeResponse, OAuthRedirect, RegisterNewClientRequest, RegisterNewClientResponse,
     ReloadOauthClientsResponse,
 };
 
@@ -115,17 +115,15 @@ pub async fn handle_request_oauth_token(
     username: String,
     state: String,
     redis_client: &web::Data<Client>,
-) -> Result<HttpResponse, AuthError> {
-    let mut con = redis_client
-        .get_connection()
-        .expect("Error getting redis connection!");
+) -> Result<OAuthRedirect, AuthError> {
+    let mut con = redis_client.get_connection()?;
 
-    let cached_key: Option<String> = con.hget("oauth_clients", &client_id)?;
+    // Check that client exists
+    let cached_redirect_url: Option<String> = con.hget("redirect_urls", &client_id)?;
 
-    if cached_key.is_none() {
-        return Err(AuthError::InvalidCredentials);
-    }
+    let redirect_url = cached_redirect_url.ok_or_else(|| AuthError::InvalidCredentials)?;
 
+    // Generate auth code and store it in Redis
     let authorization_code = generate_token();
 
     () = con.hset(&client_id, &authorization_code, &username)?;
@@ -136,11 +134,11 @@ pub async fn handle_request_oauth_token(
         &authorization_code,
     )?;
 
-    Ok(HttpResponse::Ok().json(OAuthResponse {
-        success: true,
+    Ok(OAuthRedirect {
         authorization_code,
         state,
-    }))
+        redirect_url,
+    })
 }
 
 pub async fn handle_reload_oauth_clients(
@@ -148,16 +146,15 @@ pub async fn handle_reload_oauth_clients(
     redis_client: &web::Data<Client>,
 ) -> Result<HttpResponse, AuthError> {
     let oauth_clients = load_oauth_clients(db_instance).await.unwrap();
-    let mut con = redis_client
-        .get_connection()
-        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
+    let mut con = redis_client.get_connection()?;
+
+    println!("Reloading oauth clients");
 
     let mut clients_loaded = 0;
 
-    for (client_id, client_secret) in &oauth_clients {
-        () = con
-            .hset("oauth_clients", client_id, client_secret)
-            .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
+    for (client_id, (client_secret, redirect_url)) in &oauth_clients {
+        () = con.hset("oauth_clients", client_id, client_secret)?;
+        () = con.hset("redirect_urls", client_id, redirect_url)?;
         clients_loaded = clients_loaded + 1;
     }
 

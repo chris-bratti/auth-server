@@ -274,13 +274,13 @@ pub async fn validate_pending_token(
 
 pub async fn load_oauth_clients(
     db: &web::Data<DbInstance>,
-) -> Result<HashMap<String, String>, AuthError> {
+) -> Result<HashMap<String, (String, String)>, AuthError> {
     let clients = db
         .get_oauth_clients()
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?
         .unwrap_or_default()
         .into_iter()
-        .map(|c| (c.client_id, c.client_secret))
+        .map(|c| (c.client_id, (c.client_secret, c.redirect_url)))
         .collect();
 
     Ok(clients)

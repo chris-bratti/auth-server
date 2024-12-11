@@ -155,6 +155,7 @@ pub enum EncryptionKey {
     SmtpKey,
     TwoFactorKey,
     LoggerKey,
+    OauthKey,
 }
 
 impl EncryptionKey {
@@ -163,6 +164,7 @@ impl EncryptionKey {
             EncryptionKey::SmtpKey => "SMTP_ENCRYPTION_KEY",
             EncryptionKey::TwoFactorKey => "TWO_FACTOR_KEY",
             EncryptionKey::LoggerKey => "LOG_KEY",
+            EncryptionKey::OauthKey => "OAUTH_ENCRYPTION_KEY",
         };
 
         get_env_variable(key).expect("Encryption key is unset!")
@@ -372,6 +374,13 @@ pub struct OAuthResponse {
     pub success: bool,
     pub authorization_code: String,
     pub state: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct OAuthRedirect {
+    pub authorization_code: String,
+    pub state: String,
+    pub redirect_url: String,
 }
 
 #[derive(Deserialize)]
