@@ -15,7 +15,7 @@ impl DbInstance {
         uname: &String,
         vtoken: &String,
     ) -> Result<(), DBError> {
-        let mut connection = self.db_instance.connect()?;
+        let mut connection = self.db_connection.connect()?;
 
         let now = select(diesel::dsl::now).get_result::<std::time::SystemTime>(&mut connection)?;
 
@@ -52,7 +52,7 @@ impl DbInstance {
         &self,
         uname: &String,
     ) -> Result<Option<DBVerificationToken>, DBError> {
-        let mut connection = self.db_instance.connect()?;
+        let mut connection = self.db_connection.connect()?;
 
         let db_user = users
             .filter(username.eq(uname))
@@ -69,7 +69,7 @@ impl DbInstance {
     }
 
     pub fn delete_db_verification_token(&self, uname: &String) -> Result<usize, DBError> {
-        let mut connection = self.db_instance.connect()?;
+        let mut connection = self.db_connection.connect()?;
 
         let db_user: Option<DBUser> = users
             .filter(username.eq(uname))

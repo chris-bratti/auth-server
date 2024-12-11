@@ -15,7 +15,7 @@ impl DbInstance {
         r_token: &String,
         uname: &String,
     ) -> Result<String, DBError> {
-        let mut con = self.db_instance.connect()?;
+        let mut con = self.db_connection.connect()?;
 
         let now = select(diesel::dsl::now).get_result::<std::time::SystemTime>(&mut con)?;
 
@@ -56,7 +56,7 @@ impl DbInstance {
         c_id: &String,
         uname: &String,
     ) -> Result<String, DBError> {
-        let mut con = self.db_instance.connect()?;
+        let mut con = self.db_connection.connect()?;
 
         let now = select(diesel::dsl::now).get_result::<std::time::SystemTime>(&mut con)?;
 
@@ -85,7 +85,7 @@ impl DbInstance {
     }
 
     pub fn delete_refresh_token(&self, c_id: &String, uname: &String) -> Result<usize, DBError> {
-        let mut con = self.db_instance.connect()?;
+        let mut con = self.db_connection.connect()?;
 
         let client: Option<OauthClient> = oauth_clients::table
             .filter(oauth_clients::client_id.eq(c_id))

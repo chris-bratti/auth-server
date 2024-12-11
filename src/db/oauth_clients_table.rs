@@ -7,7 +7,7 @@ use schema::oauth_clients::dsl::*;
 
 impl DbInstance {
     pub fn get_oauth_clients(&self) -> Result<Option<Vec<OauthClient>>, DBError> {
-        let mut connection = self.db_instance.connect()?;
+        let mut connection = self.db_connection.connect()?;
         let clients = oauth_clients
             .select(OauthClient::as_select())
             .load(&mut connection)
@@ -25,7 +25,7 @@ impl DbInstance {
         c_secret: &String,
         url: &String,
     ) -> Result<String, DBError> {
-        let mut connection = self.db_instance.connect()?;
+        let mut connection = self.db_connection.connect()?;
 
         let encrypted_email = encrypt_string(email, crate::EncryptionKey::SmtpKey)
             .await
@@ -51,7 +51,7 @@ impl DbInstance {
     }
 
     pub fn delete_oauth_client(&self, c_id: &String) -> Result<usize, DBError> {
-        let mut connection = self.db_instance.connect()?;
+        let mut connection = self.db_connection.connect()?;
         diesel::delete(oauth_clients.filter(client_id.eq(c_id)))
             .execute(&mut connection)
             .map_err(DBError::from)

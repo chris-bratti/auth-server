@@ -10,7 +10,7 @@ use super::schema::users;
 
 impl DbInstance {
     pub fn create_db_user(&self, user_info: UserInfo) -> Result<DBUser, DBError> {
-        let mut conn = self.db_instance.connect()?;
+        let mut conn = self.db_connection.connect()?;
         let new_user = NewDBUser {
             first_name: &user_info.first_name,
             last_name: &user_info.last_name,
@@ -30,7 +30,7 @@ impl DbInstance {
     }
 
     pub fn get_user_from_username(&self, uname: &String) -> Result<Option<DBUser>, DBError> {
-        let mut connection = self.db_instance.connect()?;
+        let mut connection = self.db_connection.connect()?;
 
         users
             .filter(username.eq(uname))
@@ -42,7 +42,7 @@ impl DbInstance {
     }
 
     pub fn unlock_db_user(&self, uname: &String) -> Result<(), DBError> {
-        let mut connection = self.db_instance.connect()?;
+        let mut connection = self.db_connection.connect()?;
 
         diesel::update(users.filter(username.eq(uname)))
             .set((locked.eq(false), pass_retries.eq(0)))
@@ -56,7 +56,7 @@ impl DbInstance {
     // Increments password retries and returns if the user is locked or not
     // Should probably move this logic to the db_helper for consistency
     pub fn increment_db_password_tries(&self, uname: &String) -> Result<bool, DBError> {
-        let mut connection = self.db_instance.connect()?;
+        let mut connection = self.db_connection.connect()?;
         let current_time =
             select(diesel::dsl::now).get_result::<std::time::SystemTime>(&mut connection)?;
 
@@ -102,7 +102,7 @@ impl DbInstance {
     }
 
     pub fn enable_2fa_for_db_user(&self, uname: &String) -> Result<(), DBError> {
-        let mut connection = self.db_instance.connect()?;
+        let mut connection = self.db_connection.connect()?;
 
         diesel::update(users.filter(username.eq(uname)))
             .set(two_factor.eq(true))
@@ -117,7 +117,7 @@ impl DbInstance {
         uname: &String,
         tf_token: &String,
     ) -> Result<(), DBError> {
-        let mut connection = self.db_instance.connect()?;
+        let mut connection = self.db_connection.connect()?;
 
         diesel::update(users.filter(username.eq(uname)))
             .set(two_factor_token.eq(tf_token))
@@ -128,7 +128,7 @@ impl DbInstance {
     }
 
     pub fn set_db_user_as_verified(&self, uname: &String) -> Result<DBUser, DBError> {
-        let mut connection = self.db_instance.connect()?;
+        let mut connection = self.db_connection.connect()?;
 
         diesel::update(users.filter(username.eq(uname)))
             .set(verified.eq(true))
@@ -142,7 +142,7 @@ impl DbInstance {
         uname: &String,
         new_uname: &String,
     ) -> Result<DBUser, DBError> {
-        let mut connection = self.db_instance.connect()?;
+        let mut connection = self.db_connection.connect()?;
 
         diesel::update(users.filter(username.eq(uname)))
             .set(username.eq(new_uname))
@@ -152,7 +152,7 @@ impl DbInstance {
     }
 
     pub fn update_db_password(&self, uname: &String, new_pass: &String) -> Result<DBUser, DBError> {
-        let mut connection = self.db_instance.connect()?;
+        let mut connection = self.db_connection.connect()?;
 
         diesel::update(users.filter(username.eq(uname)))
             .set(pass_hash.eq(new_pass))
@@ -162,7 +162,7 @@ impl DbInstance {
     }
 
     pub fn delete_db_user(&self, uname: &String) -> Result<usize, DBError> {
-        let mut connection = self.db_instance.connect()?;
+        let mut connection = self.db_connection.connect()?;
 
         diesel::delete(users.filter(username.eq(uname)))
             .execute(&mut connection)

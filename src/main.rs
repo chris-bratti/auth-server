@@ -138,6 +138,7 @@ async fn main() -> std::io::Result<()> {
             .service(register_oauth_client)
             .service(load_clients_into_redis)
             .service(oauth_request)
+            .service(get_token)
     })
     .bind_openssl("0.0.0.0:8080", builder)?
     .run()
@@ -238,6 +239,7 @@ async fn auth_request(
 async fn get_token(
     form: web::Form<TokenRequestForm>,
     request: HttpRequest,
+    db_instance: web::Data<DbInstance>,
 ) -> Result<HttpResponse, AuthError> {
     let auth_header = request
         .headers()
@@ -255,18 +257,18 @@ async fn get_token(
         authorization_code,
     } = form.into_inner();
 
-    match GrantType::from(grant_type.as_str()) {
+    let response = match GrantType::from(grant_type.as_str()) {
         GrantType::AuthorizationCode => {
             let authorization_code = authorization_code.ok_or_else(|| {
                 AuthError::InvalidRequest("Missing authorization_code".to_string())
             })?;
-            handle_authorization_token(authorization_code, &client_id).await?;
+            handle_authorization_token(authorization_code, &client_id, &db_instance).await?
         }
         GrantType::RefreshToken => todo!(),
         GrantType::Invalid => todo!(),
-    }
+    };
 
-    Err(AuthError::AccountLocked)
+    Ok(response)
 }
 
 #[post("/oauth")]
@@ -291,8 +293,8 @@ async fn oauth_request(oauth_request: web::Query<OAuthRequest>) -> Result<HttpRe
     //() = con.set_ex(&client_id, &authorization_code, 600)?;
     () = con.hset(
         "auth_codes",
-        &client_id,
-        format!("{}:{}", &authorization_code, username),
+        format!("{}:{}", &client_id, &username),
+        &authorization_code,
     )?;
     () = con.hexpire("auth_codes", 20, redis::ExpireOption::NONE, &client_id)?;
 
@@ -303,30 +305,7 @@ async fn oauth_request(oauth_request: web::Query<OAuthRequest>) -> Result<HttpRe
     }))
 }
 
-/*
-[post("/token")]
-async fn get_token(request: HttpRequest) {
-    let auth_header = request
-        .headers()
-        .get("Authorization")
-        .and_then(|v| v.to_str().ok())
-        .ok_or(AuthError::InvalidRequest(
-            "invalid header value".to_string(),
-        ))?;
-
-    let encoded_client_info: &str = auth_header
-        .split(" ")
-        .collect::<Vec<_>>()
-        .get(1)
-        .ok_or_else(|| AuthError::InvalidCredentials)?;
-
-    let decoded_client = general_purpose::STANDARD
-        .decode(encoded_client_info)
-        .map_err(|err| AuthError::InternalServerError(err.to_string()));
-}
-*/
-
-#[post("/clients/register")]
+#[post("/oauth/register")]
 async fn register_oauth_client(
     register_client_request: web::Json<RegisterNewClientRequest>,
     request: HttpRequest,

@@ -9,7 +9,7 @@ use super::{models::ApiKey, schema::api_keys};
 
 impl DbInstance {
     pub fn get_api_keys(&self) -> Result<Option<Vec<ApiKey>>, DBError> {
-        let mut connection = self.db_instance.connect()?;
+        let mut connection = self.db_connection.connect()?;
 
         let keys = api_keys
             .select(ApiKey::as_select())
@@ -21,7 +21,7 @@ impl DbInstance {
     }
 
     pub fn add_new_api_key(&self, app: &String, key: &String) -> Result<(), DBError> {
-        let mut connection = self.db_instance.connect()?;
+        let mut connection = self.db_connection.connect()?;
 
         let new_api_key = NewApiKey {
             app_name: app,
@@ -36,7 +36,7 @@ impl DbInstance {
     }
 
     pub fn delete_api_key(&self, app: &String) -> Result<usize, DBError> {
-        let mut connection = self.db_instance.connect()?;
+        let mut connection = self.db_connection.connect()?;
 
         diesel::delete(api_keys.filter(app_name.eq(app)))
             .execute(&mut connection)

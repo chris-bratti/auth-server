@@ -8,14 +8,22 @@ use crate::{DBError, User, UserInfo};
 use super::models::DbConnection;
 
 pub struct DbInstance {
-    pub db_instance: Arc<DbConnection>,
+    pub db_connection: Arc<DbConnection>,
+}
+
+impl Clone for DbInstance {
+    fn clone(&self) -> Self {
+        DbInstance {
+            db_connection: self.db_connection.clone(),
+        }
+    }
 }
 
 impl DbInstance {
     pub fn new() -> Self {
-        let db_instance = Arc::new(DbConnection::new());
+        let db_connection = Arc::new(DbConnection::new());
 
-        DbInstance { db_instance }
+        DbInstance { db_connection }
     }
 
     pub fn does_user_exist(&self, username: &String) -> Result<bool, DBError> {

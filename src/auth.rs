@@ -1,4 +1,5 @@
 use core::{convert::Into, result::Result::Ok};
+use std::sync::Arc;
 
 use actix_identity::Identity;
 use actix_web::{
@@ -581,6 +582,7 @@ pub async fn handle_verify_otp(
 pub async fn handle_authorization_token(
     authorization_code: String,
     client_id: &String,
+    db_instance: &web::Data<DbInstance>,
 ) -> Result<HttpResponse, AuthError> {
     let mut con = REDIS_CLIENT.get_connection()?;
 
@@ -601,7 +603,20 @@ pub async fn handle_authorization_token(
     let access_token = generate_oauth_token(client_id, expiry, &username).await?;
     let refresh_token = generate_token();
 
-    task::spawn_blocking(move || todo!("Add refresh_token to DB"));
+    // Clone the data necessary for the async work
+    let stored_instance = Arc::clone(db_instance);
+    let stored_id = client_id.clone();
+    let stored_token = refresh_token.clone();
+    let stored_username = username.clone();
+
+    tokio::spawn(async move {
+        if let Err(err) = stored_instance
+            .add_refresh_token(&stored_id, &stored_token, &stored_username)
+            .await
+        {
+            eprintln!("Error saving refresh token to DB: {:?}", err);
+        }
+    });
 
     Ok(HttpResponse::Ok().json(AuthorizationCodeResponse {
         success: true,

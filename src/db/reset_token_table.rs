@@ -10,7 +10,7 @@ use super::db_helper::DbInstance;
 
 impl DbInstance {
     pub fn get_reset_token_from_db(&self, uname: &String) -> Result<Option<DBResetToken>, DBError> {
-        let mut connection = self.db_instance.connect()?;
+        let mut connection = self.db_connection.connect()?;
 
         let db_user = users
             .filter(username.eq(uname))
@@ -27,7 +27,7 @@ impl DbInstance {
     }
 
     pub fn save_reset_token_to_db(&self, uname: &String, rtoken: &String) -> Result<(), DBError> {
-        let mut connection = self.db_instance.connect()?;
+        let mut connection = self.db_connection.connect()?;
 
         let now = select(diesel::dsl::now).get_result::<std::time::SystemTime>(&mut connection)?;
 
@@ -61,7 +61,7 @@ impl DbInstance {
     }
 
     pub fn delete_db_reset_token(&self, uname: &String) -> Result<usize, DBError> {
-        let mut connection = self.db_instance.connect()?;
+        let mut connection = self.db_connection.connect()?;
 
         let db_user: Option<DBUser> = users
             .filter(username.eq(uname))

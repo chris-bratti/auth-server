@@ -348,9 +348,11 @@ pub async fn validate_client_info(encoded_client_info: String) -> Result<String,
 
     let mut con = REDIS_CLIENT.get_connection()?;
 
-    let stored_key: String = con.hget("oauth_client", client_id)?;
+    let stored_key: Option<String> = con.hget("oauth_clients", client_id)?;
 
-    if stored_key != decrypt_string(&client_secret.to_string(), EncryptionKey::TwoFactorKey).await?
+    let stored_key = stored_key.ok_or_else(|| AuthError::InvalidToken)?;
+
+    if client_secret.to_string() != decrypt_string(&stored_key, EncryptionKey::TwoFactorKey).await?
     {
         return Err(AuthError::InvalidCredentials);
     }
