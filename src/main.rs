@@ -17,18 +17,14 @@ use auth_server::{
     TokenRequestForm, VerifyOtpRequest, VerifyUserRequest,
 };
 use clap::{Parser, Subcommand};
-use cookie::Cookie;
 use openssl::ssl::{SslAcceptor, SslFiletype, SslMethod};
-use web::Redirect;
 
 use std::time::Duration;
 
 use actix_web::*;
 
-use actix_identity::{Identity, IdentityMiddleware};
-use actix_session::{
-    config::PersistentSession, storage::RedisSessionStore, Session, SessionMiddleware,
-};
+use actix_identity::IdentityMiddleware;
+use actix_session::{config::PersistentSession, storage::RedisSessionStore, SessionMiddleware};
 use redis::{Client, Commands, RedisError};
 
 // Parses CLI arguments
