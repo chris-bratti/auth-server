@@ -34,6 +34,7 @@ diesel::table! {
         client_id -> Int4,
         refresh_token -> Text,
         username -> Text,
+        expiry -> Timestamp,
     }
 }
 

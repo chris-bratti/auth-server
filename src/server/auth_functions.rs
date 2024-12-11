@@ -4,7 +4,7 @@ use std::{collections::HashMap, env};
 use base64::{engine::general_purpose, Engine as _};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 
-use actix_web::Result;
+use actix_web::{web, Result};
 use aes_gcm::{
     aead::{Aead, AeadCore, KeyInit},
     Aes256Gcm,
@@ -16,17 +16,10 @@ use argon2::{
     Argon2,
 };
 use dotenvy::dotenv;
-use lettre::transport::smtp::commands::Auth;
 use redis::Commands;
 
-use crate::{
-    db::{api_keys_table::add_new_api_key, db_helper::*},
-    AuthError, EncryptionKey, OauthClaims,
-};
-use crate::{
-    db::{api_keys_table::get_api_keys, oauth_clients_table::get_oauth_clients},
-    Claims,
-};
+use crate::{db::db_helper::DbInstance, Claims};
+use crate::{AuthError, EncryptionKey, OauthClaims};
 use totp_rs::{Algorithm, Secret, TOTP};
 
 use regex::Regex;
@@ -79,12 +72,13 @@ pub async fn create_2fa_for_user(username: &String) -> Result<(String, String), 
     Ok((qr_code, token))
 }
 
-pub async fn get_totp(username: &String) -> Result<String, AuthError> {
-    let token = get_user_2fa_token(&username)
+pub async fn get_totp(username: &String, db: &web::Data<DbInstance>) -> Result<String, AuthError> {
+    let token = db
+        .get_user_2fa_token(&username)
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
     match token {
         Some(token) => {
-            let decrypted_token = decrypt_string(token, EncryptionKey::TwoFactorKey)
+            let decrypted_token = decrypt_string(&token, EncryptionKey::TwoFactorKey)
                 .await
                 .expect("Error decrypting string!");
             get_totp_config(&username, &decrypted_token)
@@ -148,9 +142,14 @@ pub fn generate_token() -> String {
     generated_token
 }
 
-pub fn verify_reset_token(username: &String, reset_token: &String) -> Result<bool, AuthError> {
-    let token_hash =
-        crate::db::db_helper::get_reset_hash(username).map_err(|_| AuthError::InvalidToken)?;
+pub fn verify_reset_token(
+    username: &String,
+    reset_token: &String,
+    db: &web::Data<DbInstance>,
+) -> Result<bool, AuthError> {
+    let token_hash = db
+        .get_reset_hash(username)
+        .map_err(|err| AuthError::Error(err.to_string()))?;
 
     verify_hash(reset_token, &token_hash).map_err(|_| AuthError::InvalidToken)
 }
@@ -158,8 +157,11 @@ pub fn verify_reset_token(username: &String, reset_token: &String) -> Result<boo
 pub fn verify_confirmation_token(
     username: &String,
     confirmation_token: &String,
+    db: &web::Data<DbInstance>,
 ) -> Result<bool, AuthError> {
-    let verification_hash = get_verification_hash(username).map_err(|_| AuthError::InvalidToken)?;
+    let verification_hash = db
+        .get_verification_hash(username)
+        .map_err(|_| AuthError::InvalidToken)?;
 
     verify_hash(confirmation_token, &verification_hash).map_err(|_| AuthError::InvalidToken)
 }
@@ -184,7 +186,7 @@ pub async fn encrypt_string(
 }
 
 pub async fn decrypt_string(
-    encrypted: String,
+    encrypted: &String,
     encryption_key: EncryptionKey,
 ) -> Result<String, aes_gcm::Error> {
     let encryption_key = encryption_key.get();
@@ -254,6 +256,7 @@ pub async fn validate_pending_token(
     username: &String,
     pending_token: String,
     scope: String,
+    db: &web::Data<DbInstance>,
 ) -> Result<(), AuthError> {
     let token = decode::<Claims>(
         &pending_token,
@@ -267,7 +270,7 @@ pub async fn validate_pending_token(
         return Err(AuthError::InvalidCredentials);
     }
 
-    let user_exists = does_user_exist(&token.sub)?;
+    let user_exists = db.does_user_exist(&token.sub)?;
 
     if token.scope == scope && user_exists {
         Ok(())
@@ -276,8 +279,11 @@ pub async fn validate_pending_token(
     }
 }
 
-pub async fn load_oauth_clients() -> Result<HashMap<String, String>, AuthError> {
-    let clients = get_oauth_clients()
+pub async fn load_oauth_clients(
+    db: web::Data<DbInstance>,
+) -> Result<HashMap<String, String>, AuthError> {
+    let clients = db
+        .get_oauth_clients()
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?
         .unwrap_or_default()
         .into_iter()
@@ -287,8 +293,11 @@ pub async fn load_oauth_clients() -> Result<HashMap<String, String>, AuthError> 
     Ok(clients)
 }
 
-pub async fn load_api_keys() -> Result<HashMap<String, String>, AuthError> {
-    let api_keys = get_api_keys()
+pub async fn load_api_keys(
+    db: &web::Data<DbInstance>,
+) -> Result<HashMap<String, String>, AuthError> {
+    let api_keys = db
+        .get_api_keys()
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?
         .unwrap_or_default()
         .into_iter()
@@ -298,7 +307,10 @@ pub async fn load_api_keys() -> Result<HashMap<String, String>, AuthError> {
     Ok(api_keys)
 }
 
-pub async fn add_api_key(app_name: &String) -> Result<String, AuthError> {
+pub async fn add_api_key(
+    app_name: &String,
+    db: web::Data<DbInstance>,
+) -> Result<String, AuthError> {
     let api_key = generate_token();
     let hash = hash_string(&api_key)
         .await
@@ -313,7 +325,7 @@ pub async fn add_api_key(app_name: &String) -> Result<String, AuthError> {
         .get_connection()
         .expect("Error getting redis connection!");
 
-    add_new_api_key(app_name, &hash)?;
+    db.add_new_api_key(app_name, &hash)?;
 
     () = con.hset("api_keys", app_name, &hash)?;
 
@@ -338,7 +350,8 @@ pub async fn validate_client_info(encoded_client_info: String) -> Result<String,
 
     let stored_key: String = con.hget("oauth_client", client_id)?;
 
-    if stored_key != decrypt_string(client_secret.to_string(), EncryptionKey::TwoFactorKey).await? {
+    if stored_key != decrypt_string(&client_secret.to_string(), EncryptionKey::TwoFactorKey).await?
+    {
         return Err(AuthError::InvalidCredentials);
     }
 
@@ -382,7 +395,7 @@ mod test_auth {
 
         assert_ne!(encrypted_email, email);
 
-        let decrypted_email = decrypt_string(encrypted_email, EncryptionKey::SmtpKey)
+        let decrypted_email = decrypt_string(&encrypted_email, EncryptionKey::SmtpKey)
             .await
             .expect("There was an error decrypting");
 
@@ -398,7 +411,7 @@ mod test_auth {
 
         assert_ne!(encrypted_username, username);
 
-        let decrypted_username = decrypt_string(encrypted_username, EncryptionKey::LoggerKey)
+        let decrypted_username = decrypt_string(&encrypted_username, EncryptionKey::LoggerKey)
             .await
             .expect("There was an error decrypting!");
 

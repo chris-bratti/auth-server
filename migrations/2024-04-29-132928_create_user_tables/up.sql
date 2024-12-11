@@ -1,5 +1,5 @@
 -- Your SQL goes here
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     first_name text NOT NULL,
     last_name text NOT NULL,
@@ -14,27 +14,27 @@ CREATE TABLE users (
     last_failed_attempt TIMESTAMP
 );
 
-CREATE TABLE verification_tokens (
+CREATE TABLE IF NOT EXISTS  verification_tokens (
     id SERIAL PRIMARY KEY,
     confirm_token text NOT NULL,
     confirm_token_expiry TIMESTAMP NOT NULL,
-    user_id INTEGER NOT NULL REFERENCES users(id)
+    user_id INTEGER NOT NULL REFERENCES users(id) UNIQUE
 );
 
-CREATE TABLE password_reset_tokens (
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
     id SERIAL PRIMARY KEY,
     reset_token text NOT NULL,
     reset_token_expiry TIMESTAMP NOT NULL,
-    user_id INTEGER NOT NULL REFERENCES users(id)
+    user_id INTEGER NOT NULL REFERENCES users(id) UNIQUE
 );
 
-CREATE TABLE api_keys (
+CREATE TABLE IF NOT EXISTS  api_keys (
     id SERIAL PRIMARY KEY,
     app_name text NOT NULL UNIQUE,
     api_key text NOT NULL
 );
 
-CREATE TABLE oauth_clients (
+CREATE TABLE IF NOT EXISTS  oauth_clients (
     id SERIAL PRIMARY KEY,
     app_name text NOT NULL UNIQUE,
     contact_email text NOT NULL,
@@ -43,9 +43,10 @@ CREATE TABLE oauth_clients (
     redirect_url text NOT NULL
 );
 
-CREATE TABLE refresh_tokens (
+CREATE TABLE IF NOT EXISTS refresh_tokens (
     id SERIAL PRIMARY KEY,
     client_id INTEGER NOT NULL REFERENCES oauth_clients(id),
     refresh_token TEXT NOT NULL,
-    username TEXT NOT NULL
-)
+    username TEXT NOT NULL,
+    expiry TIMESTAMP NOT NULL
+);

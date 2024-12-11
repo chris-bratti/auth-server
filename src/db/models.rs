@@ -1,6 +1,6 @@
 use std::time::SystemTime;
 
-use crate::db::schema::*;
+use crate::{db::schema::*, DBError};
 use diesel::prelude::*;
 
 #[derive(Queryable, Selectable, Identifiable, Debug)]
@@ -40,6 +40,26 @@ pub struct OauthClient {
     pub client_id: String,
     pub client_secret: String,
     pub redirect_url: String,
+}
+
+#[derive(Queryable, Selectable, Identifiable, Associations, Debug, PartialEq)]
+#[diesel(table_name = refresh_tokens)]
+#[diesel(belongs_to(OauthClient, foreign_key = client_id))]
+pub struct RefreshToken {
+    pub client_id: i32,
+    pub id: i32,
+    pub refresh_token: String,
+    pub username: String,
+    pub expiry: SystemTime,
+}
+
+#[derive(Insertable, Debug)]
+#[diesel(table_name = refresh_tokens)]
+pub struct NewRefreshToken<'a> {
+    pub client_id: &'a i32,
+    pub refresh_token: &'a str,
+    pub username: &'a str,
+    pub expiry: &'a SystemTime,
 }
 
 #[derive(Queryable, Selectable, Identifiable, Associations, Debug, PartialEq)]
@@ -106,4 +126,36 @@ pub struct NewOauthClient<'a> {
     pub client_id: &'a str,
     pub client_secret: &'a str,
     pub redirect_url: &'a str,
+}
+
+use diesel::{r2d2::ConnectionManager, PgConnection};
+use r2d2::{Pool, PooledConnection};
+
+use crate::get_env_variable;
+
+pub struct DbConnection {
+    connection_pool: Pool<ConnectionManager<PgConnection>>,
+}
+
+impl DbConnection {
+    pub fn connect(&self) -> Result<PooledConnection<ConnectionManager<PgConnection>>, DBError> {
+        self.connection_pool
+            .get()
+            .map_err(|_| DBError::Error("Error establishing connection!".to_string()))
+    }
+
+    pub fn new() -> Self {
+        let database_url = get_env_variable("DATABASE_URL").unwrap();
+        let manager = ConnectionManager::<PgConnection>::new(&database_url);
+        let connection_pool = Pool::builder()
+            .test_on_check_out(true)
+            .max_size(15)
+            .build(manager)
+            .unwrap();
+        DbConnection { connection_pool }
+    }
+
+    pub fn test_instance() {
+        todo!()
+    }
 }

@@ -9,11 +9,7 @@ init_db() {
         psql -h localhost -U master -c "CREATE DATABASE ${DATABASE_NAME}"
     fi
 
-    if psql -h localhost -U master -d "${DATABASE_NAME}" -tc "SELECT 1 FROM information_schema.tables WHERE table_name = 'users'" | grep -q 1; then
-        echo "Tables already exist"
-    else
-        psql -h localhost -U master -d "${DATABASE_NAME}" -f init.sql
-    fi
+    diesel migration run
 }
 
 echo "Parsing command"

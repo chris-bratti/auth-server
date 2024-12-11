@@ -36,6 +36,7 @@ pub async fn handle_login(
     username: String,
     info: LoginRequest,
     request: HttpRequest,
+    db_instance: web::Data<DbInstance>,
 ) -> Result<HttpResponse, AuthError> {
     let LoginRequest { password } = info;
 
@@ -48,13 +49,17 @@ pub async fn handle_login(
     // Case insensitive usernames
     let username: String = username.trim().to_lowercase();
 
-    if is_user_locked(&username).map_err(|_| AuthError::InvalidCredentials)? {
+    if db_instance
+        .is_user_locked(&username)
+        .map_err(|_| AuthError::InvalidCredentials)?
+    {
         println!("User is locked");
         return Err(AuthError::AccountLocked);
     }
 
     // Retrieve pass hash from DB
-    let pass_result = crate::db::db_helper::get_pass_hash_for_username(&username)
+    let pass_result = db_instance
+        .get_pass_hash_for_username(&username)
         .map_err(|_| AuthError::InvalidCredentials);
 
     // Verify password hash with Argon2
@@ -62,8 +67,9 @@ pub async fn handle_login(
 
     if verified_result.is_err() || !verified_result.unwrap() {
         println!("Failed login attempt for {}", &encrypted_username);
-        let user_not_locked =
-            failed_login_attempt(&username).expect("Error marking login attempt as failed");
+        let user_not_locked = db_instance
+            .increment_db_password_tries(&username)
+            .expect("Error marking login attempt as failed");
 
         if !user_not_locked {
             return Err(AuthError::AccountLocked);
@@ -71,7 +77,8 @@ pub async fn handle_login(
         return Err(AuthError::InvalidCredentials);
     }
 
-    let two_factor = user_has_2fa_enabled(&username)
+    let two_factor = db_instance
+        .user_has_2fa_enabled(&username)
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
     println!("User OTP: {}", two_factor);
@@ -109,10 +116,11 @@ pub async fn handle_login(
 #[get("/user")]
 pub async fn get_user_from_session(
     user: Option<Identity>,
+    db_instance: web::Data<DbInstance>,
 ) -> Result<web::Json<crate::User>, AuthError> {
     // If user exists in session, gets User entry from DB
     if let Some(user) = user {
-        match find_user_by_username(&user.id().unwrap()) {
+        match db_instance.find_user_by_username(&user.id().unwrap()) {
             Ok(some_user) => match some_user {
                 Some(user) => Ok(web::Json(user)),
                 None => Err(AuthError::Error("User not found".to_string())),
@@ -130,6 +138,7 @@ pub async fn handle_signup(
     username: String,
     info: SignupRequest,
     request: HttpRequest,
+    db_instance: web::Data<DbInstance>,
 ) -> Result<HttpResponse, AuthError> {
     let SignupRequest {
         first_name,
@@ -157,7 +166,7 @@ pub async fn handle_signup(
     let username: String = username.trim().to_lowercase();
 
     // Checks db to ensure unique usernames
-    match does_user_exist(&username) {
+    match db_instance.does_user_exist(&username) {
         Ok(username_exists) => {
             if username_exists {
                 return Err(AuthError::Error("Invalid username!".to_string()));
@@ -190,7 +199,7 @@ pub async fn handle_signup(
     };
 
     // Creates DB user
-    let user = create_user(user_info);
+    let user = db_instance.create_user(user_info);
     // Generate random 32 bit verification token path
     let generated_token = generate_token();
 
@@ -204,7 +213,8 @@ pub async fn handle_signup(
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
     // Save token hash to DB
-    crate::db::db_helper::save_verification(&username, &verification_token)
+    db_instance
+        .save_verification_token_to_db(&username, &verification_token)
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
     // Send verification email
@@ -231,6 +241,7 @@ pub async fn handle_signup(
 pub async fn handle_change_password(
     username: String,
     info: ChangePasswordRequest,
+    db_instance: web::Data<DbInstance>,
 ) -> Result<HttpResponse, AuthError> {
     let ChangePasswordRequest {
         new_password_request,
@@ -242,7 +253,8 @@ pub async fn handle_change_password(
         confirm_password,
     } = new_password_request;
     // Retrieve and check if supplied current password matches against store password hash
-    let pass_result = crate::db::db_helper::get_pass_hash_for_username(&username)
+    let pass_result = db_instance
+        .get_pass_hash_for_username(&username)
         .map_err(|err| AuthError::InternalServerError(err.to_string()));
 
     let verified_result = verify_hash(&current_password, &pass_result?);
@@ -275,7 +287,8 @@ pub async fn handle_change_password(
         .expect("Error hashing password");
 
     // Store new password in database
-    crate::db::db_helper::update_user_password(&username, &pass_hash)
+    db_instance
+        .update_db_password(&username, &pass_hash)
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
     Ok(HttpResponse::Ok().json(AuthResponse::<()> {
@@ -288,6 +301,7 @@ pub async fn handle_change_password(
 pub async fn handle_reset_password(
     username: String,
     info: ResetPasswordRequest,
+    db_instance: web::Data<DbInstance>,
 ) -> Result<HttpResponse, AuthError> {
     let ResetPasswordRequest {
         new_password_request,
@@ -301,7 +315,7 @@ pub async fn handle_reset_password(
 
     println!("Requesting to reset password");
     // Verify reset token
-    let token_verification = verify_reset_token(&username, &reset_token)?;
+    let token_verification = verify_reset_token(&username, &reset_token, &db_instance)?;
 
     // If token does not match or is no longer valid, return
     if !token_verification {
@@ -325,12 +339,17 @@ pub async fn handle_reset_password(
         .expect("Error hashing password");
 
     // Store new password in database
-    crate::db::db_helper::update_user_password(&username, &pass_hash)
+    db_instance
+        .update_db_password(&username, &pass_hash)
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
-    remove_reset_token(&username).map_err(|err| AuthError::InternalServerError(err.to_string()))?;
+    db_instance
+        .delete_db_reset_token(&username)
+        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
-    unlock_user(&username).map_err(|err| AuthError::InternalServerError(err.to_string()))?;
+    db_instance
+        .unlock_db_user(&username)
+        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
     Ok(HttpResponse::Ok().json(AuthResponse::<()> {
         success: true,
@@ -339,10 +358,13 @@ pub async fn handle_reset_password(
     }))
 }
 
-pub async fn handle_request_password_reset(username: String) -> Result<HttpResponse, AuthError> {
+pub async fn handle_request_password_reset(
+    username: String,
+    db_instance: web::Data<DbInstance>,
+) -> Result<HttpResponse, AuthError> {
     // Checks if user exists. If it doesn't, stops process but produces no error
     // This is to maintain username security
-    match does_user_exist(&username) {
+    match db_instance.does_user_exist(&username) {
         Ok(username_exists) => {
             if !username_exists {
                 return Ok(HttpResponse::new(StatusCode::OK));
@@ -364,16 +386,18 @@ pub async fn handle_request_password_reset(username: String) -> Result<HttpRespo
         .map_err(|_| AuthError::InternalServerError("Something went wrong".to_string()))?;
 
     // Save token hash to DB
-    crate::db::db_helper::save_reset(&username, &reset_token)
+    db_instance
+        .save_reset_token_to_db(&username, &reset_token)
         .map_err(|_| AuthError::InternalServerError("Something went wrong".to_string()))?;
 
-    let user = crate::db::db_helper::find_user_by_username(&username)
+    let user = db_instance
+        .find_user_by_username(&username)
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?
         .expect("No user found!");
 
     let name = user.first_name;
 
-    let user_email = decrypt_string(user.encrypted_email, EncryptionKey::SmtpKey)
+    let user_email = decrypt_string(&user.encrypted_email, EncryptionKey::SmtpKey)
         .await
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
@@ -396,23 +420,27 @@ pub async fn handle_request_password_reset(username: String) -> Result<HttpRespo
 pub async fn handle_verify_user(
     username: String,
     info: VerifyUserRequest,
+    db_instance: web::Data<DbInstance>,
 ) -> Result<HttpResponse, AuthError> {
     let VerifyUserRequest { verification_token } = info;
 
     println!("Attempting to verify user");
     // Verify reset token
-    let token_verification = verify_confirmation_token(&username, &verification_token)?;
+    let token_verification =
+        verify_confirmation_token(&username, &verification_token, &db_instance)?;
 
     // If token does not match or is no longer valid, return
     if !token_verification {
         return Err(AuthError::InvalidToken);
     }
 
-    set_user_as_verified(&username)
+    db_instance
+        .set_db_user_as_verified(&username)
         .map_err(|_| AuthError::InternalServerError("Something went wrong".to_string()))
         .expect("Error setting user as verified");
 
-    remove_verification_token(&username)
+    db_instance
+        .delete_db_verification_token(&username)
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
     Ok(HttpResponse::Ok().json(AuthResponse::<()> {
@@ -422,8 +450,12 @@ pub async fn handle_verify_user(
     }))
 }
 
-pub async fn handle_generate_2fa(username: String) -> Result<HttpResponse, AuthError> {
-    let two_factor_enabled = user_has_2fa_enabled(&username)
+pub async fn handle_generate_2fa(
+    username: String,
+    db_instance: web::Data<DbInstance>,
+) -> Result<HttpResponse, AuthError> {
+    let two_factor_enabled = db_instance
+        .user_has_2fa_enabled(&username)
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
     if two_factor_enabled {
@@ -440,9 +472,11 @@ pub async fn handle_generate_2fa(username: String) -> Result<HttpResponse, AuthE
         .await
         .expect("Error encrypting token");
 
-    add_2fa_token_for_user(&username, &encrypted_token).map_err(|_| {
-        AuthError::InternalServerError("Error saving token to database".to_string())
-    })?;
+    db_instance
+        .set_2fa_token_for_db_user(&username, &encrypted_token)
+        .map_err(|_| {
+            AuthError::InternalServerError("Error saving token to database".to_string())
+        })?;
 
     let enable_2fa_token = generate_jwt_token(&username, "enable_2fa".to_string(), 600)
         .await
@@ -457,13 +491,15 @@ pub async fn handle_generate_2fa(username: String) -> Result<HttpResponse, AuthE
 pub async fn handle_enable_2fa(
     username: String,
     info: Enable2FaRequest,
+    db_instance: web::Data<DbInstance>,
 ) -> Result<HttpResponse, AuthError> {
     let Enable2FaRequest {
         otp,
         enable_2fa_token,
     } = info;
 
-    let two_factor_enabled = user_has_2fa_enabled(&username)
+    let two_factor_enabled = db_instance
+        .user_has_2fa_enabled(&username)
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
     if two_factor_enabled {
@@ -472,11 +508,16 @@ pub async fn handle_enable_2fa(
         ));
     }
 
-    validate_pending_token(&username, enable_2fa_token, "enable_2fa".to_string())
-        .await
-        .map_err(|_| AuthError::TOTPError)?;
+    validate_pending_token(
+        &username,
+        enable_2fa_token,
+        "enable_2fa".to_string(),
+        &db_instance,
+    )
+    .await
+    .map_err(|_| AuthError::TOTPError)?;
 
-    let totp = get_totp(&username)
+    let totp = get_totp(&username, &db_instance)
         .await
         .expect("Error validating token")
         .trim()
@@ -486,7 +527,8 @@ pub async fn handle_enable_2fa(
         return Err(AuthError::TOTPError);
     }
 
-    enable_2fa_for_user(&username)
+    db_instance
+        .enable_2fa_for_db_user(&username)
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
     Ok(HttpResponse::Ok().json(AuthResponse::<()> {
@@ -500,17 +542,23 @@ pub async fn handle_verify_otp(
     username: String,
     info: VerifyOtpRequest,
     request: HttpRequest,
+    db_instance: web::Data<DbInstance>,
 ) -> Result<HttpResponse, AuthError> {
     let VerifyOtpRequest { otp, login_token } = info;
 
     println!("Verifying OTP for {}", username);
     let otp = otp.trim().to_string();
 
-    validate_pending_token(&username, login_token, "verify_otp".to_string())
-        .await
-        .map_err(|_| AuthError::TOTPError)?;
+    validate_pending_token(
+        &username,
+        login_token,
+        "verify_otp".to_string(),
+        &db_instance,
+    )
+    .await
+    .map_err(|_| AuthError::TOTPError)?;
 
-    let totp = get_totp(&username)
+    let totp = get_totp(&username, &db_instance)
         .await
         .expect("Error validating token")
         .trim()

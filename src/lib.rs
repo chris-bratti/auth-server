@@ -239,6 +239,8 @@ pub enum DBError {
     Error(String),
     #[error("Database connection error: {0}")]
     ConnectionError(#[from] diesel::ConnectionError),
+    #[error("Token invalid or expired")]
+    TokenExpired,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
