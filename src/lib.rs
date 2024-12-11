@@ -7,7 +7,6 @@ use serde_json::Value;
 use server::auth_functions::*;
 use thiserror::Error;
 
-pub mod auth;
 pub mod db;
 pub mod server;
 pub mod smtp;

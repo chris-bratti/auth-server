@@ -1,11 +1,9 @@
 use core::{convert::Into, result::Result::Ok};
-use std::sync::Arc;
 
 use actix_identity::Identity;
 use actix_web::{
     get, http::StatusCode, post, web, HttpMessage, HttpRequest, HttpResponse, Responder, Result,
 };
-use redis::Commands;
 use tokio::task;
 
 use crate::smtp::generate_reset_email_body;
@@ -18,19 +16,7 @@ use crate::{
     smtp::{self, generate_welcome_email_body},
     LoginRequest,
 };
-use crate::{
-    AuthResponse, AuthorizationCodeResponse, Generate2FaResponse, LoginResponse,
-    NewPasswordRequest, UserInfo,
-};
-
-use lazy_static::lazy_static;
-
-lazy_static! {
-    static ref REDIS_CLIENT: redis::Client = redis::Client::open(
-        get_env_variable("REDIS_CONNECTION_STRING").expect("Connection string not set!")
-    )
-    .unwrap();
-}
+use crate::{AuthResponse, Generate2FaResponse, LoginResponse, NewPasswordRequest, UserInfo};
 
 /// Server function to log in user
 pub async fn handle_login(
@@ -576,54 +562,6 @@ pub async fn handle_verify_otp(
         success: true,
         message: "OTP was successful",
         response: None,
-    }))
-}
-
-pub async fn handle_authorization_token(
-    authorization_code: String,
-    client_id: &String,
-    db_instance: &web::Data<DbInstance>,
-) -> Result<HttpResponse, AuthError> {
-    let mut con = REDIS_CLIENT.get_connection()?;
-
-    let stored_token: Option<String> = con.hget("auth_codes", &client_id)?;
-
-    let stored_token = stored_token.ok_or_else(|| AuthError::InvalidCredentials)?;
-
-    let (stored_auth_code, username) = stored_token.split_once(':').ok_or_else(|| {
-        AuthError::InternalServerError("Error validating token, please try again".to_string())
-    })?;
-
-    if stored_auth_code.to_string() != authorization_code {
-        return Err(AuthError::InvalidCredentials);
-    }
-
-    let username = username.to_string();
-    let expiry = chrono::Utc::now().timestamp() + 600;
-    let access_token = generate_oauth_token(client_id, expiry, &username).await?;
-    let refresh_token = generate_token();
-
-    // Clone the data necessary for the async work
-    let stored_instance = Arc::clone(db_instance);
-    let stored_id = client_id.clone();
-    let stored_token = refresh_token.clone();
-    let stored_username = username.clone();
-
-    tokio::spawn(async move {
-        if let Err(err) = stored_instance
-            .add_refresh_token(&stored_id, &stored_token, &stored_username)
-            .await
-        {
-            eprintln!("Error saving refresh token to DB: {:?}", err);
-        }
-    });
-
-    Ok(HttpResponse::Ok().json(AuthorizationCodeResponse {
-        success: true,
-        username,
-        access_token,
-        refresh_token,
-        expiry,
     }))
 }
 

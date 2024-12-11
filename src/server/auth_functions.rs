@@ -16,7 +16,7 @@ use argon2::{
     Argon2,
 };
 use dotenvy::dotenv;
-use redis::Commands;
+use redis::{Client, Commands};
 
 use crate::{db::db_helper::DbInstance, Claims};
 use crate::{AuthError, EncryptionKey, OauthClaims};
@@ -28,13 +28,6 @@ use lazy_static::lazy_static;
 
 lazy_static! {
     static ref JWT_SECRET: String = get_env_variable("JWT_KEY").expect("JWT_KEY is unset!");
-}
-
-lazy_static! {
-    static ref REDIS_CLIENT: redis::Client = redis::Client::open(
-        get_env_variable("REDIS_CONNECTION_STRING").expect("Connection string not set!")
-    )
-    .unwrap();
 }
 
 pub fn get_env_variable(variable: &str) -> Option<String> {
@@ -280,7 +273,7 @@ pub async fn validate_pending_token(
 }
 
 pub async fn load_oauth_clients(
-    db: web::Data<DbInstance>,
+    db: &web::Data<DbInstance>,
 ) -> Result<HashMap<String, String>, AuthError> {
     let clients = db
         .get_oauth_clients()
@@ -332,7 +325,10 @@ pub async fn add_api_key(
     Ok(api_key)
 }
 
-pub async fn validate_client_info(encoded_client_info: String) -> Result<String, AuthError> {
+pub async fn validate_client_info(
+    encoded_client_info: String,
+    redis_client: &web::Data<Client>,
+) -> Result<String, AuthError> {
     let encoded_client_info = encoded_client_info.replace("Basic ", "").trim().to_owned();
 
     let decoded_client = general_purpose::STANDARD
@@ -346,7 +342,7 @@ pub async fn validate_client_info(encoded_client_info: String) -> Result<String,
         .split_once(':')
         .ok_or_else(|| AuthError::InvalidRequest("Bad auth header".to_string()))?;
 
-    let mut con = REDIS_CLIENT.get_connection()?;
+    let mut con = redis_client.get_connection()?;
 
     let stored_key: Option<String> = con.hget("oauth_clients", client_id)?;
 

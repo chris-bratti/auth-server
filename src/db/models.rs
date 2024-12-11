@@ -145,6 +145,7 @@ impl DbConnection {
     }
 
     pub fn new() -> Self {
+        println!("Establishing database connection");
         let database_url = get_env_variable("DATABASE_URL").unwrap();
         let manager = ConnectionManager::<PgConnection>::new(&database_url);
         let connection_pool = Pool::builder()
