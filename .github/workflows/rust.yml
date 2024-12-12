@@ -30,6 +30,7 @@ jobs:
           echo "LOG_KEY=\"${{ secrets.ENCRYPTION_KEY }}\"" >> .env
           echo "REDIRECT_URL=http://localhost:3000/" >> .env
           echo "ADMIN_KEY=\"${{ secrets.ENCRYPTION_KEY }}\"" >> .env
+          echo "OAUTH_ENCRYPTION_KEY=\"${{ secrets.ENCRYPTION_KEY }}\"" >> .env
           echo "APP_NAME=test" >> .env
           mkdir certs
           echo "test" > certs/private.pem
@@ -48,7 +49,7 @@ jobs:
           echo "redis://localhost:6379/"
 
       - name: Install diesel
-        run: cargo install diesel_cli
+        run: cargo install diesel_cli --no-default-features --features postgres
         working-directory: rec_temp
 
       - name: Diesel setup

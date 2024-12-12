@@ -1,9 +1,10 @@
 use core::{option::Option::None, result::Result::Ok};
 use std::{collections::HashMap, env};
 
+use base64::{engine::general_purpose, Engine as _};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 
-use actix_web::Result;
+use actix_web::{web, Result};
 use aes_gcm::{
     aead::{Aead, AeadCore, KeyInit},
     Aes256Gcm,
@@ -15,13 +16,10 @@ use argon2::{
     Argon2,
 };
 use dotenvy::dotenv;
-use redis::Commands;
+use redis::{Client, Commands};
 
-use crate::{db::api_keys_table::get_api_keys, Claims};
-use crate::{
-    db::{api_keys_table::add_new_api_key, db_helper::*},
-    AuthError, EncryptionKey,
-};
+use crate::{db::db_helper::DbInstance, Claims};
+use crate::{AuthError, EncryptionKey, OauthClaims};
 use totp_rs::{Algorithm, Secret, TOTP};
 
 use regex::Regex;
@@ -67,12 +65,13 @@ pub async fn create_2fa_for_user(username: &String) -> Result<(String, String), 
     Ok((qr_code, token))
 }
 
-pub async fn get_totp(username: &String) -> Result<String, AuthError> {
-    let token = get_user_2fa_token(&username)
+pub async fn get_totp(username: &String, db: &web::Data<DbInstance>) -> Result<String, AuthError> {
+    let token = db
+        .get_user_2fa_token(&username)
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
     match token {
         Some(token) => {
-            let decrypted_token = decrypt_string(token, EncryptionKey::TwoFactorKey)
+            let decrypted_token = decrypt_string(&token, EncryptionKey::TwoFactorKey)
                 .await
                 .expect("Error decrypting string!");
             get_totp_config(&username, &decrypted_token)
@@ -136,12 +135,14 @@ pub fn generate_token() -> String {
     generated_token
 }
 
-pub fn verify_reset_token(username: &String, reset_token: &String) -> Result<bool, AuthError> {
-    let token_hash =
-        crate::db::db_helper::get_reset_hash(username).map_err(|_| AuthError::InvalidToken)?;
-
-    println!("Token hash: {}", &token_hash);
-    println!("Given toekn: {}", &reset_token);
+pub fn verify_reset_token(
+    username: &String,
+    reset_token: &String,
+    db: &web::Data<DbInstance>,
+) -> Result<bool, AuthError> {
+    let token_hash = db
+        .get_reset_hash(username)
+        .map_err(|err| AuthError::Error(err.to_string()))?;
 
     verify_hash(reset_token, &token_hash).map_err(|_| AuthError::InvalidToken)
 }
@@ -149,8 +150,11 @@ pub fn verify_reset_token(username: &String, reset_token: &String) -> Result<boo
 pub fn verify_confirmation_token(
     username: &String,
     confirmation_token: &String,
+    db: &web::Data<DbInstance>,
 ) -> Result<bool, AuthError> {
-    let verification_hash = get_verification_hash(username).map_err(|_| AuthError::InvalidToken)?;
+    let verification_hash = db
+        .get_verification_hash(username)
+        .map_err(|_| AuthError::InvalidToken)?;
 
     verify_hash(confirmation_token, &verification_hash).map_err(|_| AuthError::InvalidToken)
 }
@@ -164,10 +168,8 @@ pub async fn encrypt_string(
     let key = Key::<Aes256Gcm>::from_slice(&encryption_key.as_bytes());
 
     let cipher = Aes256Gcm::new(&key);
-    let nonce = Aes256Gcm::generate_nonce(&mut OsRng); // 96-bits; unique per message
+    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
     let ciphertext = cipher.encrypt(&nonce, data.as_bytes())?;
-
-    //let plaintext = cipher.decrypt(&nonce, ciphertext.as_ref())?;
 
     let mut encrypted_data: Vec<u8> = nonce.to_vec();
     encrypted_data.extend_from_slice(&ciphertext);
@@ -177,7 +179,7 @@ pub async fn encrypt_string(
 }
 
 pub async fn decrypt_string(
-    encrypted: String,
+    encrypted: &String,
     encryption_key: EncryptionKey,
 ) -> Result<String, aes_gcm::Error> {
     let encryption_key = encryption_key.get();
@@ -199,16 +201,70 @@ pub async fn decrypt_string(
     Ok(String::from_utf8(plaintext).expect("failed to convert vector of bytes to string"))
 }
 
-pub async fn generate_pending_token(
+pub async fn generate_oauth_token(
+    token_id: &String,
+    exp: i64,
     username: &String,
+) -> Result<String, jsonwebtoken::errors::Error> {
+    let claims = OauthClaims {
+        exp,
+        scope: "read write".to_string(),
+        iss: "Auth Server".to_string(),
+        sub: username.clone(),
+        client_id: token_id.clone(),
+    };
+
+    let token = encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(JWT_SECRET.as_ref()),
+    )?;
+
+    Ok(token)
+}
+
+pub async fn validate_oauth_token(
+    oauth_token: String,
+    redis_client: &web::Data<Client>,
+    username: &String,
+) -> Result<bool, AuthError> {
+    let mut connection = redis_client.get_connection()?;
+
+    let token: OauthClaims = decode::<OauthClaims>(
+        &oauth_token,
+        &DecodingKey::from_secret(JWT_SECRET.as_ref()),
+        &Validation::default(),
+    )
+    .map_err(|_| AuthError::InvalidToken)?
+    .claims;
+
+    if &token.sub != username {
+        return Err(AuthError::InvalidCredentials);
+    }
+
+    let client_secret: Option<String> = connection.hget("oauth_clients", &token.client_id)?;
+
+    if client_secret.is_none()
+        || token.scope != "read write".to_string()
+        || token.iss != "Auth Server".to_string()
+    {
+        return Err(AuthError::InvalidCredentials);
+    }
+
+    Ok(true)
+}
+
+pub async fn generate_jwt_token(
+    token_id: &String,
     scope: String,
+    timeout: i64,
 ) -> Result<String, jsonwebtoken::errors::Error> {
     let utc_timestamp = chrono::Utc::now().timestamp();
 
     let claims = Claims {
-        exp: utc_timestamp + 600, // JWT is good for 10 minutes
+        exp: utc_timestamp + timeout,
         scope,
-        sub: username.clone(),
+        sub: token_id.clone(),
     };
 
     let token = encode(
@@ -224,6 +280,7 @@ pub async fn validate_pending_token(
     username: &String,
     pending_token: String,
     scope: String,
+    db: &web::Data<DbInstance>,
 ) -> Result<(), AuthError> {
     let token = decode::<Claims>(
         &pending_token,
@@ -237,8 +294,7 @@ pub async fn validate_pending_token(
         return Err(AuthError::InvalidCredentials);
     }
 
-    let user_exists = does_user_exist(&token.sub)
-        .map_err(|_| AuthError::InternalServerError("Error searching for user".to_string()))?;
+    let user_exists = db.does_user_exist(&token.sub)?;
 
     if token.scope == scope && user_exists {
         Ok(())
@@ -247,8 +303,25 @@ pub async fn validate_pending_token(
     }
 }
 
-pub async fn load_api_keys() -> Result<HashMap<String, String>, AuthError> {
-    let api_keys = get_api_keys()
+pub async fn load_oauth_clients(
+    db: &web::Data<DbInstance>,
+) -> Result<HashMap<String, (String, String)>, AuthError> {
+    let clients = db
+        .get_oauth_clients()
+        .map_err(|err| AuthError::InternalServerError(err.to_string()))?
+        .unwrap_or_default()
+        .into_iter()
+        .map(|c| (c.client_id, (c.client_secret, c.redirect_url)))
+        .collect();
+
+    Ok(clients)
+}
+
+pub async fn load_api_keys(
+    db: &web::Data<DbInstance>,
+) -> Result<HashMap<String, String>, AuthError> {
+    let api_keys = db
+        .get_api_keys()
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?
         .unwrap_or_default()
         .into_iter()
@@ -258,7 +331,10 @@ pub async fn load_api_keys() -> Result<HashMap<String, String>, AuthError> {
     Ok(api_keys)
 }
 
-pub async fn add_api_key(app_name: &String) -> Result<String, AuthError> {
+pub async fn add_api_key(
+    app_name: &String,
+    db: web::Data<DbInstance>,
+) -> Result<String, AuthError> {
     let api_key = generate_token();
     let hash = hash_string(&api_key)
         .await
@@ -273,14 +349,41 @@ pub async fn add_api_key(app_name: &String) -> Result<String, AuthError> {
         .get_connection()
         .expect("Error getting redis connection!");
 
-    add_new_api_key(app_name, &hash)
-        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
+    db.add_new_api_key(app_name, &hash)?;
 
-    () = con
-        .hset("api_keys", app_name, &hash)
-        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
+    () = con.hset("api_keys", app_name, &hash)?;
 
     Ok(api_key)
+}
+
+pub async fn validate_client_info(
+    encoded_client_info: String,
+    redis_client: &web::Data<Client>,
+) -> Result<String, AuthError> {
+    let encoded_client_info = encoded_client_info.replace("Basic ", "").trim().to_owned();
+
+    let decoded_client = general_purpose::STANDARD
+        .decode(encoded_client_info)
+        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
+
+    let client_as_string = String::from_utf8(decoded_client)
+        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
+
+    let (client_id, client_secret) = client_as_string
+        .split_once(':')
+        .ok_or_else(|| AuthError::InvalidRequest("Bad auth header".to_string()))?;
+
+    let mut con = redis_client.get_connection()?;
+
+    let stored_key: Option<String> = con.hget("oauth_clients", client_id)?;
+
+    let stored_key = stored_key.ok_or_else(|| AuthError::InvalidToken)?;
+
+    if client_secret.to_string() != decrypt_string(&stored_key, EncryptionKey::OauthKey).await? {
+        return Err(AuthError::InvalidCredentials);
+    }
+
+    Ok(client_id.to_string())
 }
 
 #[cfg(test)]
@@ -320,7 +423,7 @@ mod test_auth {
 
         assert_ne!(encrypted_email, email);
 
-        let decrypted_email = decrypt_string(encrypted_email, EncryptionKey::SmtpKey)
+        let decrypted_email = decrypt_string(&encrypted_email, EncryptionKey::SmtpKey)
             .await
             .expect("There was an error decrypting");
 
@@ -336,7 +439,7 @@ mod test_auth {
 
         assert_ne!(encrypted_username, username);
 
-        let decrypted_username = decrypt_string(encrypted_username, EncryptionKey::LoggerKey)
+        let decrypted_username = decrypt_string(&encrypted_username, EncryptionKey::LoggerKey)
             .await
             .expect("There was an error decrypting!");
 

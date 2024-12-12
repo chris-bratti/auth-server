@@ -1,15 +1,14 @@
 use core::{fmt, str::FromStr};
 
 use actix_web::{http::StatusCode, HttpResponse, ResponseError};
+use redis::RedisError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use server::auth_functions::*;
 use thiserror::Error;
 
-pub mod auth;
 pub mod db;
 pub mod server;
-pub mod smtp;
 
 #[derive(Clone, Serialize, Deserialize)]
 pub enum AuthError {
@@ -22,6 +21,30 @@ pub enum AuthError {
     TOTPError,
     AccountLocked,
     InvalidRequest(String),
+}
+
+impl From<RedisError> for AuthError {
+    fn from(err: RedisError) -> Self {
+        AuthError::InternalServerError(err.to_string())
+    }
+}
+
+impl From<DBError> for AuthError {
+    fn from(err: DBError) -> Self {
+        AuthError::InternalServerError(err.to_string())
+    }
+}
+
+impl From<aes_gcm::Error> for AuthError {
+    fn from(err: aes_gcm::Error) -> Self {
+        AuthError::InternalServerError(err.to_string())
+    }
+}
+
+impl From<jsonwebtoken::errors::Error> for AuthError {
+    fn from(err: jsonwebtoken::errors::Error) -> Self {
+        AuthError::InternalServerError(err.to_string())
+    }
 }
 
 impl ResponseError for AuthError {
@@ -58,8 +81,8 @@ impl fmt::Display for AuthError {
             AuthError::InvalidCredentials => {
                 write!(f, "Invalid username or password")
             }
-            AuthError::InternalServerError(_error) => {
-                write!(f, "There was an error on our side :(")
+            AuthError::InternalServerError(error) => {
+                write!(f, "{error}")
             }
             AuthError::InvalidToken => {
                 write!(f, "Token invalid or expired")
@@ -132,6 +155,7 @@ pub enum EncryptionKey {
     SmtpKey,
     TwoFactorKey,
     LoggerKey,
+    OauthKey,
 }
 
 impl EncryptionKey {
@@ -140,6 +164,7 @@ impl EncryptionKey {
             EncryptionKey::SmtpKey => "SMTP_ENCRYPTION_KEY",
             EncryptionKey::TwoFactorKey => "TWO_FACTOR_KEY",
             EncryptionKey::LoggerKey => "LOG_KEY",
+            EncryptionKey::OauthKey => "OAUTH_ENCRYPTION_KEY",
         };
 
         get_env_variable(key).expect("Encryption key is unset!")
@@ -154,6 +179,22 @@ pub struct User {
     two_factor: bool,
     verified: bool,
     encrypted_email: String,
+}
+
+pub enum GrantType {
+    AuthorizationCode,
+    RefreshToken,
+    Invalid,
+}
+
+impl GrantType {
+    pub fn from(grant_type: &str) -> GrantType {
+        match grant_type {
+            "authorization_code" => GrantType::AuthorizationCode,
+            "refresh_token" => GrantType::RefreshToken,
+            _ => GrantType::Invalid,
+        }
+    }
 }
 
 pub enum AuthType {
@@ -198,6 +239,8 @@ pub enum DBError {
     Error(String),
     #[error("Database connection error: {0}")]
     ConnectionError(#[from] diesel::ConnectionError),
+    #[error("Token invalid or expired")]
+    TokenExpired,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -277,6 +320,15 @@ struct Claims {
     sub: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct OauthClaims {
+    scope: String,
+    exp: i64,
+    sub: String,
+    iss: String,
+    client_id: String,
+}
+
 #[derive(Serialize, Deserialize)]
 struct LoginResponse {
     two_factor_enabled: bool,
@@ -288,4 +340,69 @@ pub struct Generate2FaResponse {
     qr_code: String,
     token: String,
     enable_2fa_token: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct RegisterNewClientRequest {
+    pub app_name: String,
+    pub contact_email: String,
+    pub redirect_url: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct RegisterNewClientResponse {
+    pub success: bool,
+    pub client_id: String,
+    pub client_secret: String,
+    pub redirect_url: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ReloadOauthClientsResponse {
+    pub success: bool,
+    pub clients_loaded: i32,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct OAuthRequest {
+    pub client_id: String,
+    pub state: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct OAuthResponse {
+    pub success: bool,
+    pub authorization_code: String,
+    pub state: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct OAuthRedirect {
+    pub authorization_code: String,
+    pub state: String,
+    pub redirect_url: String,
+}
+
+#[derive(Deserialize)]
+pub struct TokenRequestForm {
+    pub grant_type: String,
+    pub refresh_token: Option<String>,
+    pub authorization_code: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct AuthorizationCodeResponse {
+    pub success: bool,
+    pub access_token: String,
+    pub refresh_token: String,
+    pub username: String,
+    pub expiry: i64,
+}
+
+#[derive(Serialize)]
+pub struct RefreshTokenResponse {
+    pub success: bool,
+    pub access_token: String,
+    pub username: String,
+    pub expiry: i64,
 }

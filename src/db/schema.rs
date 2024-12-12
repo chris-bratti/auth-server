@@ -1,11 +1,41 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
+    api_keys (id) {
+        id -> Int4,
+        app_name -> Text,
+        api_key -> Text,
+    }
+}
+
+diesel::table! {
+    oauth_clients (id) {
+        id -> Int4,
+        app_name -> Text,
+        contact_email -> Text,
+        client_id -> Text,
+        client_secret -> Text,
+        redirect_url -> Text,
+    }
+}
+
+diesel::table! {
     password_reset_tokens (id) {
         id -> Int4,
         reset_token -> Text,
         reset_token_expiry -> Timestamp,
         user_id -> Int4,
+    }
+}
+
+diesel::table! {
+    refresh_tokens (id) {
+        id -> Int4,
+        client_id -> Int4,
+        refresh_token -> Text,
+        token_id -> Text,
+        username -> Text,
+        expiry -> Timestamp,
     }
 }
 
@@ -35,15 +65,15 @@ diesel::table! {
     }
 }
 
-diesel::table! {
-    api_keys (id) {
-        id -> Int4,
-        app_name -> Text,
-        api_key -> Text,
-    }
-}
-
 diesel::joinable!(password_reset_tokens -> users (user_id));
+diesel::joinable!(refresh_tokens -> oauth_clients (client_id));
 diesel::joinable!(verification_tokens -> users (user_id));
 
-diesel::allow_tables_to_appear_in_same_query!(password_reset_tokens, users, verification_tokens,);
+diesel::allow_tables_to_appear_in_same_query!(
+    api_keys,
+    oauth_clients,
+    password_reset_tokens,
+    refresh_tokens,
+    users,
+    verification_tokens,
+);
