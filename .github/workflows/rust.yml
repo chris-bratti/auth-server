@@ -48,7 +48,7 @@ jobs:
           echo "redis://localhost:6379/"
 
       - name: Install diesel
-        run: cargo install diesel_cli
+        run: cargo install diesel_cli --no-default-features --features postgres
         working-directory: rec_temp
 
       - name: Diesel setup
