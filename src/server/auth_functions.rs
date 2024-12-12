@@ -223,6 +223,37 @@ pub async fn generate_oauth_token(
     Ok(token)
 }
 
+pub async fn validate_oauth_token(
+    oauth_token: String,
+    redis_client: &web::Data<Client>,
+    username: &String,
+) -> Result<bool, AuthError> {
+    let mut connection = redis_client.get_connection()?;
+
+    let token: OauthClaims = decode::<OauthClaims>(
+        &oauth_token,
+        &DecodingKey::from_secret(JWT_SECRET.as_ref()),
+        &Validation::default(),
+    )
+    .map_err(|_| AuthError::InvalidToken)?
+    .claims;
+
+    if &token.sub != username {
+        return Err(AuthError::InvalidCredentials);
+    }
+
+    let client_secret: Option<String> = connection.hget("oauth_clients", &token.client_id)?;
+
+    if client_secret.is_none()
+        || token.scope != "read write".to_string()
+        || token.iss != "Auth Server".to_string()
+    {
+        return Err(AuthError::InvalidCredentials);
+    }
+
+    Ok(true)
+}
+
 pub async fn generate_jwt_token(
     token_id: &String,
     scope: String,
