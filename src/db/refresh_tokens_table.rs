@@ -2,7 +2,7 @@ use super::db_helper::DbInstance;
 use super::models::{NewRefreshToken, OauthClient};
 use super::schema::{oauth_clients, refresh_tokens};
 use crate::db::schema::{self};
-use crate::{encrypt_string, DBError};
+use crate::{decrypt_string, encrypt_string, DBError};
 use diesel::dsl::select;
 use diesel::prelude::*;
 use schema::refresh_tokens::dsl::*;
@@ -13,13 +13,14 @@ impl DbInstance {
         &self,
         c_id: &String,
         r_token: &String,
+        t_id: &String,
         uname: &String,
     ) -> Result<(), DBError> {
         let mut con = self.db_connection.connect()?;
 
-        if self.get_refresh_token_from_id(c_id, uname).is_ok() {
+        if self.get_refresh_token_from_id(c_id, uname).await.is_ok() {
             return self
-                .update_refresh_token(c_id, uname, r_token)
+                .update_refresh_token(c_id, uname, r_token, t_id)
                 .await
                 .map(|_| ());
         }
@@ -45,6 +46,7 @@ impl DbInstance {
         let new_refresh_token = NewRefreshToken {
             client_id: &oauth_client.id,
             refresh_token: &encrypted_token,
+            token_id: t_id,
             username: uname,
             expiry: &token_expiry,
         };
@@ -54,7 +56,42 @@ impl DbInstance {
         Ok(())
     }
 
-    pub fn get_refresh_token_from_id(
+    pub async fn get_username_from_refresh_token(
+        &self,
+        c_id: &String,
+        r_id: &String,
+    ) -> Result<(String, String), DBError> {
+        let mut con = self.db_connection.connect()?;
+
+        let now = select(diesel::dsl::now).get_result::<std::time::SystemTime>(&mut con)?;
+
+        let (stored_token, uname, expiration): (String, String, std::time::SystemTime) =
+            refresh_tokens
+                .inner_join(oauth_clients::table)
+                .filter(
+                    oauth_clients::client_id
+                        .eq(c_id)
+                        .and(refresh_tokens::token_id.eq(r_id)),
+                )
+                .limit(1)
+                .select((refresh_token, username, expiry))
+                .first(&mut con)
+                .optional()?
+                .ok_or_else(|| DBError::NotFound("Refresh token for client id".to_string()))?;
+
+        if now > expiration {
+            return Err(DBError::TokenExpired);
+        }
+
+        Ok((
+            decrypt_string(&stored_token, crate::EncryptionKey::OauthKey)
+                .await
+                .unwrap(),
+            uname,
+        ))
+    }
+
+    pub async fn get_refresh_token_from_id(
         &self,
         c_id: &String,
         uname: &String,
@@ -83,7 +120,11 @@ impl DbInstance {
             return Err(DBError::TokenExpired);
         }
 
-        Ok(token)
+        let decrypted_token = decrypt_string(&token, crate::EncryptionKey::OauthKey)
+            .await
+            .map_err(|err| DBError::Error(err.to_string()))?;
+
+        Ok(decrypted_token)
     }
 
     pub async fn update_refresh_token(
@@ -91,6 +132,7 @@ impl DbInstance {
         c_id: &String,
         uname: &String,
         new_token: &String,
+        new_token_id: &String,
     ) -> Result<usize, DBError> {
         let mut con = self.db_connection.connect()?;
 
@@ -113,7 +155,11 @@ impl DbInstance {
             .unwrap();
 
         diesel::update(refresh_tokens.filter(client_id.eq(client.id).and(username.eq(uname))))
-            .set((refresh_token.eq(encrypted_token), expiry.eq(token_expiry)))
+            .set((
+                refresh_token.eq(encrypted_token),
+                expiry.eq(token_expiry),
+                token_id.eq(new_token_id),
+            ))
             .execute(&mut con)
             .map_err(DBError::from)
     }

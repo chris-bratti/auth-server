@@ -398,3 +398,11 @@ pub struct AuthorizationCodeResponse {
     pub username: String,
     pub expiry: i64,
 }
+
+#[derive(Serialize)]
+pub struct RefreshTokenResponse {
+    pub success: bool,
+    pub access_token: String,
+    pub username: String,
+    pub expiry: i64,
+}

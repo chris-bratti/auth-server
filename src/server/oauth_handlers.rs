@@ -10,8 +10,8 @@ use tokio::task;
 use crate::{server::auth_functions::*, AuthError};
 
 use crate::{
-    AuthorizationCodeResponse, OAuthRedirect, RegisterNewClientRequest, RegisterNewClientResponse,
-    ReloadOauthClientsResponse,
+    AuthorizationCodeResponse, OAuthRedirect, RefreshTokenResponse, RegisterNewClientRequest,
+    RegisterNewClientResponse, ReloadOauthClientsResponse,
 };
 
 pub async fn handle_authorization_token(
@@ -37,22 +37,35 @@ pub async fn handle_authorization_token(
 
     let expiry = chrono::Utc::now().timestamp() + 600;
     let access_token = generate_oauth_token(client_id, expiry, &username).await?;
-    let refresh_token = generate_token();
+    let mut refresh_token = generate_token();
+
+    let token_id = generate_token()
+        .get(0..8)
+        .expect("Error parsing string!")
+        .to_string();
 
     // Clone the data necessary for the async work
     let stored_instance = Arc::clone(db_instance);
     let stored_id = client_id.clone();
     let stored_token = refresh_token.clone();
+    let stored_token_id = token_id.clone();
     let stored_username = username.clone();
 
     tokio::spawn(async move {
         if let Err(err) = stored_instance
-            .add_refresh_token(&stored_id, &stored_token, &stored_username)
+            .add_refresh_token(
+                &stored_id,
+                &stored_token,
+                &stored_token_id,
+                &stored_username,
+            )
             .await
         {
             eprintln!("Error saving refresh token to DB: {:?}", err);
         }
     });
+
+    refresh_token.push_str(token_id.as_str());
 
     Ok(HttpResponse::Ok().json(AuthorizationCodeResponse {
         success: true,
@@ -65,8 +78,31 @@ pub async fn handle_authorization_token(
 
 pub async fn handle_refresh_token(
     db_instance: &web::Data<DbInstance>,
-    redis_client: &web::Data<Client>,
-) {
+    client_id: &String,
+    refresh_token: &String,
+) -> Result<HttpResponse, AuthError> {
+    // Token Id is stored in the last 10 characters of the token given to the client
+    let (provided_token, token_id) = refresh_token
+        .split_at_checked(refresh_token.len() - 8)
+        .ok_or_else(|| AuthError::InvalidCredentials)?;
+
+    let (stored_token, username) = db_instance
+        .get_username_from_refresh_token(&client_id, &token_id.to_string())
+        .await?;
+
+    if stored_token != provided_token {
+        return Err(AuthError::InvalidCredentials);
+    }
+
+    let expiry = chrono::Utc::now().timestamp() + 600;
+    let access_token = generate_oauth_token(client_id, expiry, &username).await?;
+
+    Ok(HttpResponse::Ok().json(RefreshTokenResponse {
+        success: true,
+        access_token,
+        username,
+        expiry,
+    }))
 }
 
 pub async fn handle_register_oauth_client(

@@ -130,6 +130,8 @@ pub mod test_oauth_dbs {
 
         let r_token = generate_token();
 
+        let r_id = generate_token().get(0..8).unwrap().to_string();
+
         // Create client
         DB_INSTANCE
             .add_new_oauth_client(&name, &email, &c_id, &c_secret, &url)
@@ -138,41 +140,36 @@ pub mod test_oauth_dbs {
 
         // Create refresh token
         DB_INSTANCE
-            .add_refresh_token(&c_id, &r_token, &uname)
+            .add_refresh_token(&c_id, &r_token, &r_id, &uname)
             .await
             .unwrap();
 
         // Read refresh token
         let read_token = DB_INSTANCE
             .get_refresh_token_from_id(&c_id, &uname)
-            .unwrap();
-
-        // Verify token was saved correctly
-        let decrypted_token = decrypt_string(&read_token, crate::EncryptionKey::OauthKey)
             .await
             .unwrap();
 
-        assert_eq!(r_token, decrypted_token);
+        // Verify token was saved correctly
+        assert_eq!(r_token, read_token);
 
         // Create and save new refresh token
         let new_r_token = generate_token();
 
+        let new_r_id = generate_token().get(0..8).unwrap().to_string();
+
         DB_INSTANCE
-            .add_refresh_token(&c_id, &new_r_token, &uname)
+            .add_refresh_token(&c_id, &new_r_token, &new_r_id, &uname)
             .await
             .unwrap();
 
         // Read refresh token
         let read_token = DB_INSTANCE
             .get_refresh_token_from_id(&c_id, &uname)
-            .unwrap();
-
-        // Verify token was saved correctly
-        let decrypted_token = decrypt_string(&read_token, crate::EncryptionKey::OauthKey)
             .await
             .unwrap();
 
-        assert_eq!(new_r_token, decrypted_token);
+        assert_eq!(new_r_token, read_token);
 
         // Clean up
         DB_INSTANCE.delete_refresh_token(&c_id, &uname).unwrap();
@@ -195,6 +192,8 @@ pub mod test_oauth_dbs {
 
         let r_token = generate_token();
 
+        let r_id = generate_token().get(0..8).unwrap().to_string();
+
         // Create
         DB_INSTANCE
             .add_new_oauth_client(&name, &email, &c_id, &c_secret, &url)
@@ -202,45 +201,41 @@ pub mod test_oauth_dbs {
             .unwrap();
 
         DB_INSTANCE
-            .add_refresh_token(&c_id, &r_token, &uname)
+            .add_refresh_token(&c_id, &r_token, &r_id, &uname)
             .await
             .unwrap();
 
         // Add another
         let second_token = generate_token();
 
+        let second_token_id = generate_token().get(0..8).unwrap().to_string();
+
         DB_INSTANCE
-            .add_refresh_token(&c_id, &second_token, &second_uname)
+            .add_refresh_token(&c_id, &second_token, &second_token_id, &second_uname)
             .await
             .unwrap();
 
         // Read first
         let read_refresh_token = DB_INSTANCE
             .get_refresh_token_from_id(&c_id, &uname)
-            .unwrap();
-
-        let decrypted_token = decrypt_string(&read_refresh_token, crate::EncryptionKey::OauthKey)
             .await
             .unwrap();
 
-        assert_eq!(decrypted_token, r_token);
+        assert_eq!(read_refresh_token, r_token);
 
         // Read second
         let second_read_refresh_token = DB_INSTANCE
             .get_refresh_token_from_id(&c_id, &second_uname)
+            .await
             .unwrap();
 
-        let decrypted_token =
-            decrypt_string(&second_read_refresh_token, crate::EncryptionKey::OauthKey)
-                .await
-                .unwrap();
-
-        assert_eq!(decrypted_token, second_token);
+        assert_eq!(second_read_refresh_token, second_token);
 
         // Update first
-        let new_token = "newrandomtoken".to_string();
+        let new_token = generate_token();
+        let new_token_id = generate_token().get(0..8).unwrap().to_string();
         let num_updated = DB_INSTANCE
-            .update_refresh_token(&c_id, &uname, &new_token)
+            .update_refresh_token(&c_id, &uname, &new_token, &new_token_id)
             .await
             .unwrap();
 
@@ -249,12 +244,10 @@ pub mod test_oauth_dbs {
         // Read first again
         let read_token = DB_INSTANCE
             .get_refresh_token_from_id(&c_id, &uname)
-            .unwrap();
-
-        let decrypted_token = decrypt_string(&read_token, crate::EncryptionKey::OauthKey)
             .await
             .unwrap();
-        assert_eq!(decrypted_token, new_token);
+
+        assert_eq!(read_token, new_token);
 
         // Delete first
         let num_deleted = DB_INSTANCE.delete_refresh_token(&c_id, &uname).unwrap();

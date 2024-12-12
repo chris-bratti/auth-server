@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
     id SERIAL PRIMARY KEY,
     client_id INTEGER NOT NULL REFERENCES oauth_clients(id),
     refresh_token TEXT NOT NULL,
+    token_id TEXT NOT NULL UNIQUE,
     username TEXT NOT NULL,
     expiry TIMESTAMP NOT NULL,
     UNIQUE (client_id, username)

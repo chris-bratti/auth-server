@@ -49,6 +49,7 @@ pub struct RefreshToken {
     pub client_id: i32,
     pub id: i32,
     pub refresh_token: String,
+    pub token_id: String,
     pub username: String,
     pub expiry: SystemTime,
 }
@@ -58,6 +59,7 @@ pub struct RefreshToken {
 pub struct NewRefreshToken<'a> {
     pub client_id: &'a i32,
     pub refresh_token: &'a str,
+    pub token_id: &'a str,
     pub username: &'a str,
     pub expiry: &'a SystemTime,
 }

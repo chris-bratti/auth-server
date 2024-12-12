@@ -348,8 +348,7 @@ pub async fn validate_client_info(
 
     let stored_key = stored_key.ok_or_else(|| AuthError::InvalidToken)?;
 
-    if client_secret.to_string() != decrypt_string(&stored_key, EncryptionKey::TwoFactorKey).await?
-    {
+    if client_secret.to_string() != decrypt_string(&stored_key, EncryptionKey::OauthKey).await? {
         return Err(AuthError::InvalidCredentials);
     }
 

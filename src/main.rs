@@ -8,8 +8,8 @@ use auth_server::{
         },
         auth_handlers,
         oauth_handlers::{
-            handle_authorization_token, handle_register_oauth_client, handle_reload_oauth_clients,
-            handle_request_oauth_token,
+            handle_authorization_token, handle_refresh_token, handle_register_oauth_client,
+            handle_reload_oauth_clients, handle_request_oauth_token,
         },
     },
     AuthError, AuthRequest, AuthType, ChangePasswordRequest, Enable2FaRequest, GrantType,
@@ -256,7 +256,7 @@ async fn get_token(
 
     let TokenRequestForm {
         grant_type,
-        refresh_token: _,
+        refresh_token,
         authorization_code,
     } = form.into_inner();
 
@@ -268,7 +268,11 @@ async fn get_token(
             handle_authorization_token(authorization_code, &client_id, &db_instance, &redis_client)
                 .await?
         }
-        GrantType::RefreshToken => todo!(),
+        GrantType::RefreshToken => {
+            let refresh_token = refresh_token
+                .ok_or_else(|| AuthError::InvalidRequest("Missing refresh token!".to_string()))?;
+            handle_refresh_token(&db_instance, &client_id, &refresh_token).await?
+        }
         GrantType::Invalid => todo!(),
     };
 
