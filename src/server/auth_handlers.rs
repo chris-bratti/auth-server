@@ -1,9 +1,11 @@
 use core::{convert::Into, result::Result::Ok};
 
 use actix_identity::Identity;
+use actix_session::{Session, SessionExt};
 use actix_web::{
     get, http::StatusCode, post, web, HttpMessage, HttpRequest, HttpResponse, Responder, Result,
 };
+use leptos_actix::extract;
 use tokio::task;
 
 use crate::server::smtp::{generate_welcome_email_body, send_email};
@@ -19,13 +21,11 @@ use super::smtp::generate_reset_email_body;
 
 /// Server function to log in user
 pub async fn handle_login(
-    username: String,
-    info: LoginRequest,
+    username: &String,
+    password: String,
     request: HttpRequest,
     db_instance: web::Data<DbInstance>,
-) -> Result<HttpResponse, AuthError> {
-    let LoginRequest { password } = info;
-
+) -> Result<bool, AuthError> {
     let encrypted_username: String = encrypt_string(&username, EncryptionKey::LoggerKey)
         .await
         .expect("Error encrypting username");
@@ -70,31 +70,19 @@ pub async fn handle_login(
     println!("User OTP: {}", two_factor);
 
     if two_factor {
+        println!("Creating pending token");
         let pending_token = generate_jwt_token(&username, "verify_otp".to_string(), 600)
             .await
             .map_err(|_| {
                 AuthError::InternalServerError(String::from("Error generating pending token"))
             })?;
-        Ok(HttpResponse::Ok().json(AuthResponse {
-            success: false,
-            message: "User has 2FA enabled",
-            response: Some(LoginResponse {
-                two_factor_enabled: true,
-                login_token: Some(pending_token),
-            }),
-        }))
+        request.get_session().insert("otp", &pending_token).unwrap();
+        Ok(true)
     } else {
         // Attach user to current session
         Identity::login(&request.extensions(), username.clone().into()).unwrap();
 
-        Ok(HttpResponse::Ok().json(AuthResponse {
-            success: true,
-            message: "Login success",
-            response: Some(LoginResponse {
-                two_factor_enabled: false,
-                login_token: None,
-            }),
-        }))
+        Ok(false)
     }
 }
 
@@ -121,23 +109,15 @@ pub async fn get_user_from_session(
 
 /// Server function to create a new user
 pub async fn handle_signup(
-    username: String,
-    info: SignupRequest,
+    username: &String,
+    first_name: String,
+    last_name: String,
+    email: String,
+    password: String,
+    confirm_password: String,
     request: HttpRequest,
     db_instance: web::Data<DbInstance>,
-) -> Result<HttpResponse, AuthError> {
-    let SignupRequest {
-        first_name,
-        last_name,
-        email,
-        new_password_request,
-    } = info;
-
-    let NewPasswordRequest {
-        confirm_password,
-        password,
-    } = new_password_request;
-
+) -> Result<(), AuthError> {
     // This should have been done on the form submit, but just in case something snuck through
     if confirm_password != password {
         return Err(AuthError::PasswordConfirmationError);
@@ -216,11 +196,7 @@ pub async fn handle_signup(
     println!("Saving user to session: {}", user.username);
     Identity::login(&request.extensions(), user.username.into()).unwrap();
 
-    Ok(HttpResponse::Ok().json(AuthResponse::<()> {
-        success: true,
-        message: "New user enrolled",
-        response: None,
-    }))
+    Ok(())
 }
 
 /// Server function to update user password
@@ -279,7 +255,7 @@ pub async fn handle_change_password(
 
     Ok(HttpResponse::Ok().json(AuthResponse::<()> {
         success: true,
-        message: "Password change successful",
+        message: "Password change successful".to_string(),
         response: None,
     }))
 }
@@ -339,7 +315,7 @@ pub async fn handle_reset_password(
 
     Ok(HttpResponse::Ok().json(AuthResponse::<()> {
         success: true,
-        message: "Password reset successful",
+        message: "Password reset successful".to_string(),
         response: None,
     }))
 }
@@ -398,7 +374,7 @@ pub async fn handle_request_password_reset(
 
     Ok(HttpResponse::Ok().json(AuthResponse::<()> {
         success: true,
-        message: "Password reset request successful",
+        message: "Password reset request successful".to_string(),
         response: None,
     }))
 }
@@ -431,7 +407,7 @@ pub async fn handle_verify_user(
 
     Ok(HttpResponse::Ok().json(AuthResponse::<()> {
         success: true,
-        message: "User verified",
+        message: "User verified".to_string(),
         response: None,
     }))
 }
@@ -519,19 +495,18 @@ pub async fn handle_enable_2fa(
 
     Ok(HttpResponse::Ok().json(AuthResponse::<()> {
         success: true,
-        message: "2FA enabled",
+        message: "2FA enabled".to_string(),
         response: None,
     }))
 }
 
 pub async fn handle_verify_otp(
-    username: String,
-    info: VerifyOtpRequest,
+    username: &String,
+    otp: String,
+    login_token: String,
     request: HttpRequest,
     db_instance: web::Data<DbInstance>,
-) -> Result<HttpResponse, AuthError> {
-    let VerifyOtpRequest { otp, login_token } = info;
-
+) -> Result<(), AuthError> {
     println!("Verifying OTP for {}", username);
     let otp = otp.trim().to_string();
 
@@ -557,11 +532,7 @@ pub async fn handle_verify_otp(
     // Attach user to current session
     Identity::login(&request.extensions(), username.clone().into()).unwrap();
 
-    Ok(HttpResponse::Ok().json(AuthResponse::<()> {
-        success: true,
-        message: "OTP was successful",
-        response: None,
-    }))
+    Ok(())
 }
 
 #[post("/logout")]

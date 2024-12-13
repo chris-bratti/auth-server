@@ -117,7 +117,7 @@ pub fn check_valid_password(password: &String) -> bool {
         && contains_capital.is_match(password)
         && contains_special.is_match(password);
 
-    valid && password.len() >= 8 && password.len() <= 16
+    valid && password.len() >= 8 && password.len() <= 24
 }
 
 pub fn generate_token() -> String {
@@ -354,36 +354,6 @@ pub async fn add_api_key(
     () = con.hset("api_keys", app_name, &hash)?;
 
     Ok(api_key)
-}
-
-pub async fn validate_client_info(
-    encoded_client_info: String,
-    redis_client: &web::Data<Client>,
-) -> Result<String, AuthError> {
-    let encoded_client_info = encoded_client_info.replace("Basic ", "").trim().to_owned();
-
-    let decoded_client = general_purpose::STANDARD
-        .decode(encoded_client_info)
-        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
-
-    let client_as_string = String::from_utf8(decoded_client)
-        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
-
-    let (client_id, client_secret) = client_as_string
-        .split_once(':')
-        .ok_or_else(|| AuthError::InvalidRequest("Bad auth header".to_string()))?;
-
-    let mut con = redis_client.get_connection()?;
-
-    let stored_key: Option<String> = con.hget("oauth_clients", client_id)?;
-
-    let stored_key = stored_key.ok_or_else(|| AuthError::InvalidToken)?;
-
-    if client_secret.to_string() != decrypt_string(&stored_key, EncryptionKey::OauthKey).await? {
-        return Err(AuthError::InvalidCredentials);
-    }
-
-    Ok(client_id.to_string())
 }
 
 #[cfg(test)]

@@ -1,6 +1,6 @@
 use std::time::SystemTime;
 
-use crate::{db::schema::*, DBError};
+use crate::db::schema::*;
 use diesel::prelude::*;
 
 #[derive(Queryable, Selectable, Identifiable, Debug)]
@@ -133,7 +133,7 @@ pub struct NewOauthClient<'a> {
 use diesel::{r2d2::ConnectionManager, PgConnection};
 use r2d2::{Pool, PooledConnection};
 
-use crate::get_env_variable;
+use crate::{get_env_variable, DBError};
 
 pub struct DbConnection {
     connection_pool: Pool<ConnectionManager<PgConnection>>,

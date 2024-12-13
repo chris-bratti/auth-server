@@ -1,7 +1,9 @@
 use super::db_helper::DbInstance;
 use super::models::NewApiKey;
-use crate::db::schema::{self};
-use crate::DBError;
+use crate::{
+    db::schema::{self},
+    DBError,
+};
 use diesel::prelude::*;
 use schema::api_keys::dsl::*;
 

@@ -1,14 +1,41 @@
 use core::{fmt, str::FromStr};
-
-use actix_web::{http::StatusCode, HttpResponse, ResponseError};
-use redis::RedisError;
+use leptos::Params;
+use leptos_router::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use server::auth_functions::*;
-use thiserror::Error;
 
+use cfg_if::cfg_if;
+
+cfg_if! {
+    if #[cfg(feature = "ssr")] {
+        use actix_web::{http::StatusCode, HttpResponse, ResponseError};
+        use thiserror::Error;
+    use leptos::ServerFnError;
+    use redis::RedisError;
+    use server::auth_functions::*;
+    }
+}
+pub mod client;
+pub mod controllers;
+
+#[cfg(feature = "ssr")]
 pub mod db;
+#[cfg(feature = "ssr")]
 pub mod server;
+
+pub mod app;
+pub use app::*;
+
+#[cfg(feature = "hydrate")]
+#[wasm_bindgen::prelude::wasm_bindgen]
+pub fn hydrate() {
+    use app::*;
+    use leptos::*;
+
+    console_error_panic_hook::set_once();
+
+    mount_to_body(App);
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 pub enum AuthError {
@@ -23,12 +50,21 @@ pub enum AuthError {
     InvalidRequest(String),
 }
 
+#[cfg(feature = "ssr")]
+impl AuthError {
+    pub fn to_server_fn_error(self) -> ServerFnError<AuthError> {
+        ServerFnError::WrappedServerError(self)
+    }
+}
+
+#[cfg(feature = "ssr")]
 impl From<RedisError> for AuthError {
     fn from(err: RedisError) -> Self {
         AuthError::InternalServerError(err.to_string())
     }
 }
 
+#[cfg(feature = "ssr")]
 impl From<DBError> for AuthError {
     fn from(err: DBError) -> Self {
         AuthError::InternalServerError(err.to_string())
@@ -41,12 +77,14 @@ impl From<aes_gcm::Error> for AuthError {
     }
 }
 
+#[cfg(feature = "ssr")]
 impl From<jsonwebtoken::errors::Error> for AuthError {
     fn from(err: jsonwebtoken::errors::Error) -> Self {
         AuthError::InternalServerError(err.to_string())
     }
 }
 
+#[cfg(feature = "ssr")]
 impl ResponseError for AuthError {
     fn error_response(&self) -> HttpResponse {
         let error_message = format!("{}", self);
@@ -151,6 +189,21 @@ impl FromStr for AuthError {
     }
 }
 
+#[cfg(feature = "ssr")]
+#[derive(Error, Debug)]
+pub enum DBError {
+    #[error("User not found: {0}")]
+    NotFound(String),
+    #[error("Internal server error: {0}")]
+    InternalServerError(#[from] diesel::result::Error),
+    #[error("Error: {0}")]
+    Error(String),
+    #[error("Database connection error: {0}")]
+    ConnectionError(#[from] diesel::ConnectionError),
+    #[error("Token invalid or expired")]
+    TokenExpired,
+}
+
 pub enum EncryptionKey {
     SmtpKey,
     TwoFactorKey,
@@ -158,6 +211,7 @@ pub enum EncryptionKey {
     OauthKey,
 }
 
+#[cfg(feature = "ssr")]
 impl EncryptionKey {
     pub fn get(&self) -> String {
         let key = match self {
@@ -229,20 +283,6 @@ impl AuthType {
     }
 }
 
-#[derive(Error, Debug)]
-pub enum DBError {
-    #[error("User not found: {0}")]
-    NotFound(String),
-    #[error("Internal server error: {0}")]
-    InternalServerError(#[from] diesel::result::Error),
-    #[error("Error: {0}")]
-    Error(String),
-    #[error("Database connection error: {0}")]
-    ConnectionError(#[from] diesel::ConnectionError),
-    #[error("Token invalid or expired")]
-    TokenExpired,
-}
-
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct UserInfo {
     pub username: String,
@@ -306,10 +346,10 @@ pub struct Enable2FaRequest {
     enable_2fa_token: String,
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct AuthResponse<'a, T> {
+#[derive(Serialize, Deserialize, Clone)]
+pub struct AuthResponse<T> {
     success: bool,
-    message: &'a str,
+    message: String,
     response: Option<T>,
 }
 
@@ -329,8 +369,8 @@ struct OauthClaims {
     client_id: String,
 }
 
-#[derive(Serialize, Deserialize)]
-struct LoginResponse {
+#[derive(Serialize, Deserialize, Clone)]
+pub struct LoginResponse {
     two_factor_enabled: bool,
     login_token: Option<String>,
 }
@@ -363,7 +403,7 @@ pub struct ReloadOauthClientsResponse {
     pub clients_loaded: i32,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(leptos::Params, PartialEq, Deserialize, Debug)]
 pub struct OAuthRequest {
     pub client_id: String,
     pub state: String,
