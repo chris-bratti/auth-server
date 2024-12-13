@@ -128,14 +128,24 @@ pub fn Auth() -> impl IntoView {
                                     </label>
                                 </div>
                                 <input class="btn btn-primary" type="submit" value="Login"/>
-                                    <div class="buttons">
-                                        <A class="forgot-password-btn" href="/forgotpassword">
-                                         "Forgot Password?"
-                                        </A>
-                                        <A href="/signup" class="button">
+                                <A class="forgot-password-btn" href="/forgotpassword">
+                                    "Forgot Password?"
+                                </A>
+                                {move || {
+                                    if !client_id().is_empty() || !state().is_empty(){
+                                        view! {
+                                            <A href=format!("/signup?client_id={}&state={}", client_id(), state()) class="forgot-password-btn">
                                             "Don't have an account? Sign up!"
-                                        </A>
-                                </div>
+                                            </A>
+                                        }
+                                    }else{
+                                        view! {
+                                            <A href="/signup" class="forgot-password-btn">
+                                            "Don't have an account? Sign up!"
+                                            </A>
+                                        }
+                                    }
+                                }}
                             </ActionForm>
 
                             {move || {
@@ -184,7 +194,25 @@ pub fn Auth() -> impl IntoView {
 }
 
 #[component]
-pub fn SignUp() -> impl IntoView {
+pub fn Signup() -> impl IntoView {
+    let oauth_query = use_query::<OAuthRequest>();
+
+    let client_id = Signal::derive(move || {
+        oauth_query.with(|query: &Result<OAuthRequest, ParamsError>| {
+            query
+                .as_ref()
+                .map(|query: &OAuthRequest| query.client_id.clone())
+                .unwrap_or("".to_string())
+        })
+    });
+    let state = Signal::derive(move || {
+        oauth_query.with(|query| {
+            query
+                .as_ref()
+                .map(|query| query.state.clone())
+                .unwrap_or("".to_string())
+        })
+    });
     // Uses the SignUp server function
     let signup = create_server_action::<Signup>();
     // Used to fetch any errors returned from the server
@@ -225,6 +253,18 @@ pub fn SignUp() -> impl IntoView {
 
                                 action=signup
                             >
+                                <input
+                                    class="form-control"
+                                    type="hidden"
+                                    name="client_id"
+                                    value=client_id()
+                                />
+                                <input
+                                    class="form-control"
+                                    type="hidden"
+                                    name="state"
+                                    value=state()
+                                />
                                 <div class="mb-3">
                                     <label class="form-label">
 
@@ -335,6 +375,298 @@ pub fn SignUp() -> impl IntoView {
                 }}
 
             </div>
+
+        </div>
+    }
+}
+
+#[component]
+pub fn ForgotPassword() -> impl IntoView {
+    let forgot_password = create_server_action::<RequestPasswordReset>();
+    let pending = forgot_password.pending();
+
+    view! {
+        <div style:font-family="sans-serif" style:text-align="center">
+            <div class="container">
+                {move || {
+                    if pending() {
+                        view! { <h1>Emailing reset instructions...</h1> }.into_view()
+                    } else {
+                        view! {
+                            <h1>Forgot Password</h1>
+                            <p>
+                                "Enter your username. If a valid account exists, you will receive an email with reset instructions"
+                            </p>
+                            <ActionForm class="login-form" action=forgot_password>
+                                <div class="mb-3">
+                                    <label class="form-label">
+                                        "Username"
+                                        <input
+                                            class="form-control"
+                                            type="text"
+                                            name="username"
+                                            required=true
+                                        />
+                                    </label>
+                                </div>
+                                <input
+                                    class="btn btn-primary"
+                                    type="submit"
+                                    value="Request Password Reset"
+                                />
+                            </ActionForm>
+                        }
+                            .into_view()
+                    }
+                }}
+
+            </div>
+
+        </div>
+    }
+}
+
+#[component]
+pub fn EnableTwoFactor(
+    user: ReadSignal<User>,
+    set_user: WriteSignal<User>,
+    set_enable_two_factor: WriteSignal<bool>,
+) -> impl IntoView {
+    let qr_code = create_resource(
+        || (),
+        move |_| async move { generate_2fa(user.get().username.to_string()).await },
+    );
+
+    let enable_2fa = create_server_action::<Enable2FA>();
+    let loading = qr_code.loading();
+    let value = enable_2fa.value();
+    view! {
+        {move || {
+            if loading() {
+                view! { <h1>loading...</h1> }.into_view()
+            } else {
+                let (encoded, token) = qr_code.get().unwrap().unwrap();
+                view! {
+                    <ActionForm class="login-form" action=enable_2fa>
+                        <img src=format!("data:image/png;base64,{}", encoded) alt="QR Code"/>
+                        <input
+                            class="form-control"
+                            type="hidden"
+                            name="username"
+                            value=user.get().username
+                        />
+                        <input
+                            class="form-control"
+                            type="hidden"
+                            name="two_factor_token"
+                            value=token
+                        />
+                        <div class="mb-3">
+                            <label class="form-label">
+                                <input
+                                    class="form-control"
+                                    type="text"
+                                    name="otp"
+                                    maxLength=6
+                                    placeholder="OTP From Authenticator"
+                                />
+                            </label>
+                        </div>
+                        <input class="btn btn-primary" type="submit" value="Enable Two Factor"/>
+                    </ActionForm>
+                    {move || {
+                        if value().is_some() && value().unwrap().unwrap() {
+                            set_user(User{
+                                two_factor: true,
+                                ..user.get()
+                            });
+                            set_enable_two_factor(false);
+                        }
+                    }}
+                }
+                    .into_view()
+            }
+        }}
+    }
+}
+
+#[component]
+pub fn ResetPassword() -> impl IntoView {
+    let params = use_params_map();
+    let generated_id =
+        move || params.with(|params| params.get("generated_id").cloned().unwrap_or_default());
+    let (passwords_match, set_passwords_match) = create_signal(true);
+    // Uses the SignUp server function
+    let reset_password = create_server_action::<PasswordReset>();
+    // Used to fetch any errors returned from the server
+    let reset_password_value = reset_password.value();
+
+    let pending = reset_password.pending();
+    view! {
+        <div style:font-family="sans-serif" style:text-align="center">
+            <div class="container">
+                {move || {
+                    if pending() {
+                        view! { <h1>Resetting password...</h1> }.into_view()
+                    } else {
+                        view! {
+                            <h1>Reset Password</h1>
+                            <ActionForm
+                                class="login-form"
+                                on:submit=move |ev| {
+                                    let data = PasswordReset::from_event(&ev);
+                                    if data.is_err() {
+                                        ev.prevent_default();
+                                    } else {
+                                        let data_values = data.unwrap();
+                                        if data_values.new_password != data_values.confirm_password
+                                        {
+                                            set_passwords_match(false);
+                                            ev.prevent_default();
+                                        }
+                                    }
+                                }
+
+                                action=reset_password
+                            >
+                                <div class="mb-3">
+                                    <label class="form-label">
+                                        <input
+                                            class="form-control"
+                                            type="text"
+                                            name="username"
+                                            required=true
+                                            placeholder="Username"
+                                        />
+                                    </label>
+                                </div>
+                                <input
+                                    class="form-control"
+                                    type="hidden"
+                                    name="reset_token"
+                                    value=move || generated_id()
+                                />
+                                <div class="mb-3">
+                                    <label class="form-label">
+                                        <input
+                                            class="form-control"
+                                            type="password"
+                                            name="new_password"
+                                            required=true
+                                            minLength=8
+                                            maxLength=16
+                                            pattern=PASSWORD_PATTERN
+                                            placeholder="New Password"
+                                        />
+                                    </label>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">
+                                        <input
+                                            class="form-control"
+                                            type="password"
+                                            name="confirm_password"
+                                            required=true
+                                            minLength=8
+                                            maxLength=16
+                                            pattern=PASSWORD_PATTERN
+                                            placeholder="Confirm New Password"
+                                        />
+                                    </label>
+                                </div>
+                                <input
+                                    class="btn btn-primary"
+                                    type="submit"
+                                    value="Update Password"
+                                />
+                            </ActionForm>
+                            {move || {
+                                if !passwords_match.get() {
+                                    view! { <p>Passwords do not match</p> }.into_view()
+                                } else {
+                                    view! {}.into_view()
+                                }
+                            }}
+
+                            {move || {
+                                match reset_password_value.get() {
+                                    Some(response) => {
+                                        match response {
+                                            Ok(_) => view! {}.into_view(),
+                                            Err(server_err) => {
+                                                view! { <p>{format!("{}", server_err.to_string())}</p> }
+                                                    .into_view()
+                                            }
+                                        }
+                                    }
+                                    None => view! {}.into_view(),
+                                }
+                            }}
+                        }
+                            .into_view()
+                    }
+                }}
+
+            </div>
+        </div>
+    }
+}
+
+#[component]
+pub fn Verify() -> impl IntoView {
+    let params = use_params_map();
+    let generated_id =
+        move || params.with(|params| params.get("generated_id").cloned().unwrap_or_default());
+
+    let verify_user = create_server_action::<VerifyUser>();
+    let validation_result = verify_user.value();
+    let pending = verify_user.pending();
+
+    view! {
+        <div style:font-family="sans-serif" style:text-align="center">
+            {move || {
+                if !pending() {
+                    if validation_result.get().is_some() {
+                        view! {
+                            <h1>There was an error verifying your account</h1>
+                            <p>Your verification link could have expired. Try resending</p>
+                        }
+                            .into_view()
+                    } else {
+                        view! {
+                            <div class="container">
+                                <ActionForm class="login-form" action=verify_user>
+                                    <div class="mb-3">
+                                        <label class="form-label">
+                                            <input
+                                                class="form-control"
+                                                type="text"
+                                                name="username"
+                                                required=true
+                                                placeholder="Username"
+                                            />
+                                        </label>
+                                    </div>
+                                    <input
+                                        class="form-control"
+                                        type="hidden"
+                                        name="verification_token"
+                                        value=generated_id()
+                                    />
+                                    <input
+                                        class="btn btn-primary"
+                                        type="submit"
+                                        value="Verify Account"
+                                    />
+                                </ActionForm>
+                            </div>
+                        }
+                            .into_view()
+                    }
+                } else {
+                    view! { <h1>Verifying...</h1> }.into_view()
+                }
+            }}
 
         </div>
     }

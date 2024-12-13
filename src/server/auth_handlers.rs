@@ -8,6 +8,7 @@ use actix_web::{
 use leptos_actix::extract;
 use tokio::task;
 
+use crate::db::schema::verification_tokens;
 use crate::server::smtp::{generate_welcome_email_body, send_email};
 use crate::LoginRequest;
 use crate::{
@@ -262,19 +263,11 @@ pub async fn handle_change_password(
 
 pub async fn handle_reset_password(
     username: String,
-    info: ResetPasswordRequest,
+    reset_token: String,
+    password: String,
+    confirm_password: String,
     db_instance: web::Data<DbInstance>,
-) -> Result<HttpResponse, AuthError> {
-    let ResetPasswordRequest {
-        new_password_request,
-        reset_token,
-    } = info;
-
-    let NewPasswordRequest {
-        password,
-        confirm_password,
-    } = new_password_request;
-
+) -> Result<(), AuthError> {
     println!("Requesting to reset password");
     // Verify reset token
     let token_verification = verify_reset_token(&username, &reset_token, &db_instance)?;
@@ -313,11 +306,7 @@ pub async fn handle_reset_password(
         .unlock_db_user(&username)
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
-    Ok(HttpResponse::Ok().json(AuthResponse::<()> {
-        success: true,
-        message: "Password reset successful".to_string(),
-        response: None,
-    }))
+    Ok(())
 }
 
 pub async fn handle_request_password_reset(
@@ -381,11 +370,9 @@ pub async fn handle_request_password_reset(
 
 pub async fn handle_verify_user(
     username: String,
-    info: VerifyUserRequest,
+    verification_token: String,
     db_instance: web::Data<DbInstance>,
-) -> Result<HttpResponse, AuthError> {
-    let VerifyUserRequest { verification_token } = info;
-
+) -> Result<(), AuthError> {
     println!("Attempting to verify user");
     // Verify reset token
     let token_verification =
@@ -405,17 +392,14 @@ pub async fn handle_verify_user(
         .delete_db_verification_token(&username)
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
-    Ok(HttpResponse::Ok().json(AuthResponse::<()> {
-        success: true,
-        message: "User verified".to_string(),
-        response: None,
-    }))
+    Ok(())
 }
 
 pub async fn handle_generate_2fa(
     username: String,
     db_instance: web::Data<DbInstance>,
-) -> Result<HttpResponse, AuthError> {
+    request: HttpRequest,
+) -> Result<(String, String), AuthError> {
     let two_factor_enabled = db_instance
         .user_has_2fa_enabled(&username)
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
@@ -443,23 +427,22 @@ pub async fn handle_generate_2fa(
     let enable_2fa_token = generate_jwt_token(&username, "enable_2fa".to_string(), 600)
         .await
         .map_err(|_| AuthError::InternalServerError("Error creating pending_token".to_string()))?;
-    Ok(HttpResponse::Ok().json(web::Json(Generate2FaResponse {
-        qr_code,
-        token,
-        enable_2fa_token,
-    })))
+
+    request
+        .get_session()
+        .insert("2fa", &enable_2fa_token)
+        .unwrap();
+
+    Ok((qr_code, token))
 }
 
 pub async fn handle_enable_2fa(
     username: String,
-    info: Enable2FaRequest,
+    otp: String,
+    enable_2fa_token: String,
     db_instance: web::Data<DbInstance>,
-) -> Result<HttpResponse, AuthError> {
-    let Enable2FaRequest {
-        otp,
-        enable_2fa_token,
-    } = info;
-
+    request: HttpRequest,
+) -> Result<(), AuthError> {
     let two_factor_enabled = db_instance
         .user_has_2fa_enabled(&username)
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
@@ -493,11 +476,7 @@ pub async fn handle_enable_2fa(
         .enable_2fa_for_db_user(&username)
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
-    Ok(HttpResponse::Ok().json(AuthResponse::<()> {
-        success: true,
-        message: "2FA enabled".to_string(),
-        response: None,
-    }))
+    Ok(())
 }
 
 pub async fn handle_verify_otp(

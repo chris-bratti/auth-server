@@ -1,9 +1,13 @@
-use crate::server::auth_handlers::handle_signup;
+use crate::server::auth_handlers::{
+    handle_enable_2fa, handle_generate_2fa, handle_request_password_reset, handle_reset_password,
+    handle_verify_user,
+};
 use crate::{AuthError, AuthResponse, LoginResponse, VerifyOtpRequest};
 use crate::{OAuthRedirect, OAuthRequest};
 use cfg_if::cfg_if;
 use leptos::server;
 use leptos::ServerFnError;
+use leptos_router::ServerRedirectFunction;
 cfg_if! {
     if #[cfg(feature = "ssr")] {
         use actix_web::{web, HttpRequest, HttpResponse};
@@ -18,6 +22,7 @@ cfg_if! {
             db::db_helper::DbInstance,
             server::auth_handlers::{handle_login, handle_verify_otp},
         };
+        use crate::server::auth_handlers::handle_signup;
     }
 }
 
@@ -156,10 +161,7 @@ async fn verify_otp(
     client_id: String,
     state: String,
 ) -> Result<(), ServerFnError<AuthError>> {
-    // Get HttpRequest
-    let req: actix_web::HttpRequest = extract()
-        .await
-        .map_err(|_| AuthError::InternalServerError("No context found!".to_string()))?;
+    let (req, db_instance) = get_request_data().await?;
 
     // Extract login_token from user session
     let login_token: String = req
@@ -167,11 +169,6 @@ async fn verify_otp(
         .get("otp")
         .map_err(|_| AuthError::InternalServerError("Error getting session!".to_string()))?
         .ok_or_else(|| AuthError::InvalidCredentials)?;
-
-    let db_instance: web::Data<DbInstance> = extract().await.map_err(|_| {
-        AuthError::InternalServerError("Unable to find session data".to_string())
-            .to_server_fn_error()
-    })?;
 
     handle_verify_otp(&username, otp, login_token, req, db_instance)
         .await
@@ -200,4 +197,85 @@ async fn verify_otp(
     }
 
     Ok(())
+}
+
+#[server(PasswordReset, "/api")]
+pub async fn reset_password(
+    username: String,
+    reset_token: String,
+    password: String,
+    confirm_password: String,
+) -> Result<(), ServerFnError<AuthError>> {
+    // Get HttpRequest
+    let (req, db_instance) = get_request_data().await?;
+
+    handle_reset_password(
+        username,
+        reset_token,
+        password,
+        confirm_password,
+        db_instance,
+    )
+    .await?;
+
+    Ok(())
+}
+
+#[server(RequestPasswordReset, "/api")]
+pub async fn request_password_reset(username: String) -> Result<(), ServerFnError<AuthError>> {
+    let (_, db_instance) = get_request_data().await?;
+
+    handle_request_password_reset(username, db_instance).await?;
+
+    Ok(())
+}
+
+#[server(VerifyUser, "/api")]
+pub async fn verify_user(
+    username: String,
+    verification_token: String,
+) -> Result<(), ServerFnError<AuthError>> {
+    let (_, db_instance) = get_request_data().await?;
+    handle_verify_user(username, verification_token, db_instance).await?;
+    Ok(())
+}
+
+#[server(Generate2FA, "/api")]
+pub async fn generate_2fa(username: String) -> Result<(String, String), ServerFnError<AuthError>> {
+    let (req, db_instance) = get_request_data().await?;
+
+    let (qr_code, token) = handle_generate_2fa(username, db_instance, req).await?;
+
+    Ok((qr_code, token))
+}
+
+#[server(Enable2FA, "/api")]
+pub async fn enable_2fa(username: String, otp: String) -> Result<bool, ServerFnError<AuthError>> {
+    let (req, db_instance) = get_request_data().await?;
+
+    // Extract login_token from user session
+    let two_factor_token: String = req
+        .get_session()
+        .get("2fa")
+        .map_err(|_| AuthError::InternalServerError("Error getting session!".to_string()))?
+        .ok_or_else(|| AuthError::InvalidCredentials)?;
+
+    handle_enable_2fa(username, otp, two_factor_token, db_instance, req).await?;
+
+    Ok(true)
+}
+
+#[cfg(feature = "ssr")]
+pub async fn get_request_data(
+) -> Result<(HttpRequest, web::Data<DbInstance>), ServerFnError<AuthError>> {
+    // Get HttpRequest
+    let req: actix_web::HttpRequest = extract()
+        .await
+        .map_err(|_| AuthError::InternalServerError("No context found!".to_string()))?;
+    let db_instance: web::Data<DbInstance> = extract().await.map_err(|_| {
+        AuthError::InternalServerError("Unable to find session data".to_string())
+            .to_server_fn_error()
+    })?;
+
+    Ok((req, db_instance))
 }

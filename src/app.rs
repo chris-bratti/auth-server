@@ -11,7 +11,7 @@ pub fn App() -> impl IntoView {
     provide_meta_context();
 
     view! {
-        <Stylesheet id="leptos" href="/pkg/auth-server.css"/>
+        <Stylesheet id="leptos" href="/pkg/auth_server.css"/>
         <Stylesheet
             id="boostrap"
             href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
@@ -27,6 +27,7 @@ pub fn App() -> impl IntoView {
                     <Routes>
                         <Route path="" view=HomePage/>
                         <Route path="/login" view=Auth/>
+                        <Route path="/signup" view=Signup/>
                         <Route path="/*any" view=NotFound/>
                     </Routes>
                 </main>
