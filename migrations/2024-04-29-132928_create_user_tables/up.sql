@@ -28,12 +28,6 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
     user_id INTEGER NOT NULL REFERENCES users(id) UNIQUE
 );
 
-CREATE TABLE IF NOT EXISTS  api_keys (
-    id SERIAL PRIMARY KEY,
-    app_name text NOT NULL UNIQUE,
-    api_key text NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS  oauth_clients (
     id SERIAL PRIMARY KEY,
     app_name text NOT NULL UNIQUE,

@@ -1,7 +1,4 @@
-use actix_web_httpauth::headers::www_authenticate::Challenge;
-use auth_server::{
-    db::schema::oauth_clients::client_secret, server::auth_functions::decrypt_string, EncryptionKey,
-};
+use auth_server::{server::auth_functions::decrypt_string, EncryptionKey};
 use cfg_if::cfg_if;
 
 cfg_if! {
@@ -11,22 +8,17 @@ cfg_if! {
             db::db_helper::DbInstance,
             server::{
                 auth_functions::{
-                    add_api_key, get_env_variable, hash_string, load_api_keys,
-                    verify_hash,
+                    get_env_variable
                 },
-                auth_handlers,
                 oauth_handlers::{
                     handle_authorization_token, handle_refresh_token, handle_register_oauth_client,
-                    handle_reload_oauth_clients, handle_request_oauth_token,
+                    handle_reload_oauth_clients,
                 },
             },
-            AuthError, AuthRequest, AuthType, ChangePasswordRequest, Enable2FaRequest, GrantType,
-            LoginRequest, OAuthRedirect, OAuthRequest, RegisterNewClientRequest, ResetPasswordRequest,
-            SignupRequest, TokenRequestForm, VerifyOtpRequest, VerifyUserRequest,
+            AuthError, GrantType,
+            RegisterNewClientRequest,TokenRequestForm,
         };
-        use clap::{Parser, Subcommand};
         use openssl::ssl::{SslAcceptor, SslFiletype, SslMethod};
-        use web::Redirect;
 
         use std::time::Duration;
 
@@ -34,7 +26,7 @@ cfg_if! {
 
         use actix_identity::IdentityMiddleware;
         use actix_session::{config::PersistentSession, storage::RedisSessionStore, SessionMiddleware};
-        use redis::{Client, Commands, RedisError};
+        use redis::{Client, Commands};
         use actix_files::Files;
         use auth_server::app::*;
         use leptos::*;
@@ -43,26 +35,20 @@ cfg_if! {
         use actix_web::middleware::Logger;
         use env_logger::Env;
         use actix_web_httpauth::extractors::bearer::BearerAuth;
-        use actix_web_httpauth::extractors::bearer;
-        use actix_web_httpauth::extractors::AuthenticationError;
         use actix_web_httpauth::extractors::basic::BasicAuth;
         use auth_server::server::auth_functions::validate_oauth_token;
-
-
-
-        use std::future::{ready, Ready};
+        use url::form_urlencoded;
 
         use actix_web::{
-            dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform},
+            dev::{ServiceRequest},
             Error,
         };
-        use futures_util::future::LocalBoxFuture;
 
         async fn basic_validator(
             req: ServiceRequest,
             credentials: BasicAuth,
         ) -> Result<ServiceRequest, (actix_web::Error, ServiceRequest)> {
-            eprintln!("{credentials:?}");
+            // Get the provided basic auth parameters
             let client_id = credentials.user_id().to_string();
             let secret = credentials.password().unwrap();
 
@@ -70,18 +56,16 @@ cfg_if! {
 
             let mut con = redis_client.get_connection().unwrap();
 
+            // Get cached secret and validate
             let stored_key: Option<String> = con.hget("oauth_clients", &client_id).unwrap();
 
             let stored_key = stored_key.ok_or_else(|| AuthError::InvalidToken).unwrap();
-
-            println!("{stored_key}");
 
             if secret.to_string() != decrypt_string(&stored_key, EncryptionKey::OauthKey).await.unwrap() {
                 return Err((actix_web::error::ErrorUnauthorized("Invalid client info"), req));
             }
 
-            println!("{} and {}", client_id, secret);
-
+            // If authorization passes, provides the client_id to the endpoint handler
             req.extensions_mut().insert(client_id);
 
             Ok(req)
@@ -91,16 +75,35 @@ cfg_if! {
             req: ServiceRequest,
             credentials: BearerAuth
         ) -> Result<ServiceRequest, (Error, ServiceRequest)> {
-            if credentials.token() == "mF_9.B5f-4.1JqM" {
-                Ok(req)
-            } else {
-                let config = req.app_data::<bearer::Config>()
-                    .cloned()
-                    .unwrap_or_default()
-                    .scope("urn:example:channel=HBO&urn:example:rating=G,PG-13");
+            // Parse the query string and check for username
+            let parsed: Vec<(String, String)> = form_urlencoded::parse(req.query_string().as_bytes())
+            .into_owned()
+            .collect();
 
-                Err((AuthenticationError::from(config).into(), req))
+            let mut username_query = None;
+
+            for (key, value) in parsed {
+                if key == "username" {
+                    username_query = Some(value);
+                }
             }
+
+            // Validate provided JWT token
+            match username_query {
+                Some(username) => {
+                    let redis_client = req.app_data::<web::Data<Client>>().unwrap();
+
+                    if validate_oauth_token(credentials.token().to_string(), redis_client, &username).await.is_err(){
+                        return Err((actix_web::error::ErrorUnauthorized("Invalid client info"), req));
+                    }
+
+                    Ok(req)
+                },
+                None => {
+                    Err((actix_web::error::ErrorBadRequest("Username not provided!"), req))
+                }
+            }
+
         }
 
     }
@@ -110,7 +113,7 @@ cfg_if! {
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     use actix_cors::Cors;
-    use actix_web_httpauth::{extractors::basic, middleware::HttpAuthentication};
+    use actix_web_httpauth::middleware::HttpAuthentication;
 
     let redis_connection_string =
         get_env_variable("REDIS_CONNECTION_STRING").expect("Connection string not set!");
@@ -136,14 +139,8 @@ async fn main() -> std::io::Result<()> {
             .as_bytes(),
     );
 
-    env_logger::init_from_env(Env::default().default_filter_or("info"));
-
-    // Sets the admin_key for the session
-    let mut con = redis_client.get_connection().unwrap();
-    let admin_key = hash_string(&get_env_variable("ADMIN_KEY").unwrap())
-        .await
-        .unwrap();
-    let _: () = con.set("admin_key", admin_key).unwrap();
+    // Env logger for middleware
+    env_logger::init_from_env(Env::default().default_filter_or("warning"));
 
     // Creates new session store for Actix, using Redis as a backend
     let store = RedisSessionStore::new(redis_connection_string)
@@ -162,11 +159,13 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         let leptos_options = &conf.leptos_options;
         let site_root = &leptos_options.site_root;
+        // Cors protection for the leptos server functions
         let cors = Cors::default()
             .allowed_origin("https://localhost:3000")
             .allowed_methods(vec!["GET", "POST"])
             .max_age(3600);
         App::new()
+            // Logger middleware
             .wrap(Logger::default())
             .wrap(Logger::new("%a %{User-Agent}i"))
             .wrap(actix_web::middleware::Logger::default())
@@ -200,11 +199,17 @@ async fn main() -> std::io::Result<()> {
             )
             .service(register_oauth_client)
             .service(load_clients_into_redis)
-            .service(auth_request)
+            // Routes needing basic auth validation
             .service(
-                web::scope("/token")
+                web::scope("/oauth")
                     .wrap(HttpAuthentication::basic(basic_validator))
-                    .route("/", web::post().to(get_token)),
+                    .route("/token", web::post().to(get_token)),
+            )
+            // Routes needing bearer auth validation
+            .service(
+                web::scope("/user")
+                    .wrap(HttpAuthentication::bearer(bearer_validator))
+                    .route("/test", web::post().to(test_bearer)),
             )
     })
     .bind_openssl(&addr, ssl_builder)?
@@ -212,94 +217,16 @@ async fn main() -> std::io::Result<()> {
     .await
 }
 
-// Main Auth endpoint, requires a request_type, api_key, and app_name
-#[post("/auth")]
-async fn auth_request(
-    auth_payload: web::Json<AuthRequest>,
-    request: HttpRequest,
-    db_instance: web::Data<DbInstance>,
-    redis_client: web::Data<Client>,
-) -> Result<HttpResponse, AuthError> {
-    let request_type = request
-        .headers()
-        .get("X-Request-Type")
-        .and_then(|v| v.to_str().ok())
-        .ok_or(AuthError::InvalidRequest(
-            "invalid header value".to_string(),
-        ))?;
+// Placeholder for endpoints accessing user information
+#[cfg(feature = "ssr")]
+async fn test_bearer() -> Result<impl Responder, AuthError> {
+    println!("You've made it!");
 
-    let app_name = request
-        .headers()
-        .get("X-App-Name")
-        .and_then(|v| v.to_str().ok())
-        .ok_or(AuthError::InvalidRequest(
-            "invalid header value".to_string(),
-        ))?;
-
-    let AuthRequest { username, data } = auth_payload.into_inner();
-
-    let response = match AuthType::from(request_type) {
-        AuthType::Login => {
-            todo!()
-            /*
-            let data: LoginRequest = serde_json::from_value(data.expect("Missing data field"))
-                .map_err(|_| AuthError::InvalidRequest("invalid request body".to_string()))?;
-            auth_handlers::handle_login(username, password, request, db_instance).await?
-            */
-        }
-        AuthType::Signup => {
-            todo!()
-            /*
-            let data: SignupRequest = serde_json::from_value(data.expect("Missing data field"))
-                .map_err(|_| AuthError::InvalidRequest("invalid request body".to_string()))?;
-            auth_handlers::handle_signup(username, data, request, db_instance).await?
-            */
-        }
-        AuthType::ChangePassword => {
-            let data: ChangePasswordRequest =
-                serde_json::from_value(data.expect("Missing data field"))
-                    .map_err(|_| AuthError::InvalidRequest("invalid request body".to_string()))?;
-            auth_handlers::handle_change_password(username, data, db_instance).await?
-        }
-        AuthType::VerifyUser => {
-            let data: VerifyUserRequest = serde_json::from_value(data.expect("Missing data field"))
-                .map_err(|_| AuthError::InvalidRequest("invalid request body".to_string()))?;
-            auth_handlers::handle_verify_user(username, data, db_instance).await?
-        }
-        AuthType::ResetPassword => {
-            let data: ResetPasswordRequest =
-                serde_json::from_value(data.expect("Missing data field"))
-                    .map_err(|_| AuthError::InvalidRequest("invalid request body".to_string()))?;
-            auth_handlers::handle_reset_password(username, data, db_instance).await?
-        }
-        AuthType::RequestPasswordReset => {
-            auth_handlers::handle_request_password_reset(username, db_instance).await?
-        }
-        AuthType::VerifyOtp => {
-            todo!()
-            /*
-            let data: VerifyOtpRequest = serde_json::from_value(data.expect("Missing data field"))
-                .map_err(|_| AuthError::InvalidRequest("invalid request body".to_string()))?;
-            auth_handlers::handle_verify_otp(username, data, request, db_instance).await?
-            */
-        }
-        AuthType::Generate2Fa => auth_handlers::handle_generate_2fa(username, db_instance).await?,
-        AuthType::Enable2Fa => {
-            let data: Enable2FaRequest = serde_json::from_value(data.expect("Missing data field"))
-                .map_err(|_| AuthError::InvalidRequest("invalid request body".to_string()))?;
-            auth_handlers::handle_enable_2fa(username, data, db_instance).await?
-        }
-        AuthType::Logout => todo!(),
-        AuthType::Invalid => {
-            return Err(AuthError::InvalidRequest(
-                "invalid request type".to_string(),
-            ))
-        }
-    };
-
-    Ok(response)
+    Ok(HttpResponse::Ok().body("Client info validated!"))
 }
 
+// Handler for getting oauth token using authorization code or refresh token
+#[cfg(feature = "ssr")]
 async fn get_token(
     form: web::Form<TokenRequestForm>,
     request: HttpRequest,
@@ -311,10 +238,6 @@ async fn get_token(
         .get::<String>()
         .ok_or_else(|| AuthError::InvalidRequest("Missing client header".to_string()))?
         .to_string();
-
-    println!("Got a client idL {client_id}");
-
-    //let client_id = validate_client_info(auth_header.to_string(), &redis_client).await?;
 
     let TokenRequestForm {
         grant_type,
@@ -335,41 +258,17 @@ async fn get_token(
                 .ok_or_else(|| AuthError::InvalidRequest("Missing refresh token!".to_string()))?;
             handle_refresh_token(&db_instance, &client_id, &refresh_token).await?
         }
-        GrantType::Invalid => todo!(),
+        GrantType::Invalid => {
+            return Err(AuthError::InvalidRequest("Invalid grant_type".to_string()));
+        }
     };
 
     Ok(response)
 }
 
-/*
+// Endpoint to register a new OAuth client
 #[cfg(feature = "ssr")]
-#[post("/oauth")]
-async fn oauth_request(
-    oauth_request: web::Query<OAuthRequest>,
-    redis_client: web::Data<Client>,
-) -> Result<impl Responder, AuthError> {
-    // Simulate login
-    // Todo: Implement Leptos for login
-    let username = "testuser123".to_string();
-
-    let OAuthRequest { client_id, state } = oauth_request.into_inner();
-
-    let OAuthRedirect {
-        authorization_code,
-        state,
-        redirect_url,
-    } = handle_request_oauth_token(client_id, username, state, &redis_client).await?;
-
-    println!("Redirecting to: {redirect_url}?code={authorization_code}&state={state}");
-
-    Ok(Redirect::to(format!(
-        "{redirect_url}?code={authorization_code}&state={state}"
-    )))
-}
-    */
-
-#[cfg(feature = "ssr")]
-#[post("/oauth/register")]
+#[post("/clients/register")]
 async fn register_oauth_client(
     register_client_request: web::Json<RegisterNewClientRequest>,
     request: HttpRequest,
@@ -406,6 +305,7 @@ async fn register_oauth_client(
     Ok(response)
 }
 
+// Internal endpoint to reload oauth clients into redis cache
 #[cfg(feature = "ssr")]
 #[post("/internal/reload-clients")]
 async fn load_clients_into_redis(

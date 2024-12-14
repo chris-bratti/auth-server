@@ -1,7 +1,6 @@
 use core::{option::Option::None, result::Result::Ok};
 use std::{collections::HashMap, env};
 
-use base64::{engine::general_purpose, Engine as _};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 
 use actix_web::{web, Result};
@@ -315,45 +314,6 @@ pub async fn load_oauth_clients(
         .collect();
 
     Ok(clients)
-}
-
-pub async fn load_api_keys(
-    db: &web::Data<DbInstance>,
-) -> Result<HashMap<String, String>, AuthError> {
-    let api_keys = db
-        .get_api_keys()
-        .map_err(|err| AuthError::InternalServerError(err.to_string()))?
-        .unwrap_or_default()
-        .into_iter()
-        .map(|k| (k.app_name, k.api_key))
-        .collect();
-
-    Ok(api_keys)
-}
-
-pub async fn add_api_key(
-    app_name: &String,
-    db: web::Data<DbInstance>,
-) -> Result<String, AuthError> {
-    let api_key = generate_token();
-    let hash = hash_string(&api_key)
-        .await
-        .map_err(|_| AuthError::Error("Failed to hash api key".to_string()))?;
-
-    let client = redis::Client::open(
-        get_env_variable("REDIS_CONNECTION_STRING").expect("Connection string not set!"),
-    )
-    .unwrap();
-
-    let mut con = client
-        .get_connection()
-        .expect("Error getting redis connection!");
-
-    db.add_new_api_key(app_name, &hash)?;
-
-    () = con.hset("api_keys", app_name, &hash)?;
-
-    Ok(api_key)
 }
 
 #[cfg(test)]

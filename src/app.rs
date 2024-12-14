@@ -1,10 +1,16 @@
+#![allow(non_snake_case)]
 use crate::client::auth_pages::*;
-use crate::client::client_helpers::*;
-use crate::controllers::{first_test, test};
+use crate::controllers::Logout;
 use crate::{client::client_helpers::get_user_from_session, User};
 use leptos::*;
 use leptos_meta::*;
 use leptos_router::*;
+
+#[derive(Clone)]
+struct UserContext {
+    pub user_signal: (ReadSignal<User>, WriteSignal<User>),
+}
+
 #[component]
 pub fn App() -> impl IntoView {
     // Provides context that manages stylesheets, titles, meta tags, etc.
@@ -26,8 +32,21 @@ pub fn App() -> impl IntoView {
                 <main>
                     <Routes>
                         <Route path="" view=HomePage/>
-                        <Route path="/login" view=Auth/>
+                        <Route path="/login" view=Login/>
                         <Route path="/signup" view=Signup/>
+                        <Route
+                            path="/user"
+                            view=|| {
+                                view! {
+                                    <UserVerificationWrapper>
+                                        <UserProfile/>
+                                    </UserVerificationWrapper>
+                                }
+                            }
+                        />
+                        <Route path="/forgotpassword" view=ForgotPassword/>
+                        <Route path="/reset/:generated_id" view=ResetPassword/>
+                        <Route path="/verify/:generated_id" view=Verify/>
                         <Route path="/*any" view=NotFound/>
                     </Routes>
                 </main>
@@ -58,8 +77,6 @@ fn HomePage() -> impl IntoView {
         </div>
     }
 }
-
-/*
 
 #[component]
 pub fn LoggedIn(children: ChildrenFn) -> impl IntoView {
@@ -197,7 +214,7 @@ pub fn UserProfile() -> impl IntoView {
         }}
     }
 }
-*/
+
 #[component]
 fn NotLoggedIn() -> impl IntoView {
     view! {

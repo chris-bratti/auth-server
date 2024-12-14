@@ -1,22 +1,15 @@
 use core::{convert::Into, result::Result::Ok};
 
 use actix_identity::Identity;
-use actix_session::{Session, SessionExt};
+use actix_session::SessionExt;
 use actix_web::{
-    get, http::StatusCode, post, web, HttpMessage, HttpRequest, HttpResponse, Responder, Result,
+    http::StatusCode, post, web, HttpMessage, HttpRequest, HttpResponse, Responder, Result,
 };
-use leptos_actix::extract;
 use tokio::task;
 
-use crate::db::schema::verification_tokens;
 use crate::server::smtp::{generate_welcome_email_body, send_email};
-use crate::LoginRequest;
-use crate::{
-    db::db_helper::*, server::auth_functions::*, AuthError, ChangePasswordRequest,
-    Enable2FaRequest, EncryptionKey, ResetPasswordRequest, SignupRequest, VerifyOtpRequest,
-    VerifyUserRequest,
-};
-use crate::{AuthResponse, Generate2FaResponse, LoginResponse, NewPasswordRequest, UserInfo};
+use crate::{db::db_helper::*, server::auth_functions::*, AuthError, EncryptionKey};
+use crate::{AuthResponse, UserInfo};
 
 use super::smtp::generate_reset_email_body;
 
@@ -87,6 +80,7 @@ pub async fn handle_login(
     }
 }
 
+/*
 /// Retrieves the User information based on username in current session
 #[get("/user")]
 pub async fn get_user_from_session(
@@ -107,6 +101,7 @@ pub async fn get_user_from_session(
         Err(AuthError::Error("User not found".to_string()))
     }
 }
+    */
 
 /// Server function to create a new user
 pub async fn handle_signup(
@@ -203,18 +198,11 @@ pub async fn handle_signup(
 /// Server function to update user password
 pub async fn handle_change_password(
     username: String,
-    info: ChangePasswordRequest,
+    current_password: String,
+    password: String,
+    confirm_password: String,
     db_instance: web::Data<DbInstance>,
 ) -> Result<HttpResponse, AuthError> {
-    let ChangePasswordRequest {
-        new_password_request,
-        current_password,
-    } = info;
-
-    let NewPasswordRequest {
-        password,
-        confirm_password,
-    } = new_password_request;
     // Retrieve and check if supplied current password matches against store password hash
     let pass_result = db_instance
         .get_pass_hash_for_username(&username)
@@ -441,7 +429,6 @@ pub async fn handle_enable_2fa(
     otp: String,
     enable_2fa_token: String,
     db_instance: web::Data<DbInstance>,
-    request: HttpRequest,
 ) -> Result<(), AuthError> {
     let two_factor_enabled = db_instance
         .user_has_2fa_enabled(&username)
@@ -483,7 +470,7 @@ pub async fn handle_verify_otp(
     username: &String,
     otp: String,
     login_token: String,
-    request: HttpRequest,
+    request: &HttpRequest,
     db_instance: web::Data<DbInstance>,
 ) -> Result<(), AuthError> {
     println!("Verifying OTP for {}", username);

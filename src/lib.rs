@@ -1,5 +1,4 @@
 use core::{fmt, str::FromStr};
-use leptos::Params;
 use leptos_router::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -298,54 +297,6 @@ pub struct AuthRequest {
     pub data: Option<Value>,
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct LoginRequest {
-    pub password: String,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct SignupRequest {
-    first_name: String,
-    last_name: String,
-    email: String,
-    new_password_request: NewPasswordRequest,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct NewPasswordRequest {
-    password: String,
-    confirm_password: String,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct ChangePasswordRequest {
-    new_password_request: NewPasswordRequest,
-    current_password: String,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct ResetPasswordRequest {
-    new_password_request: NewPasswordRequest,
-    reset_token: String,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct VerifyUserRequest {
-    verification_token: String,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct VerifyOtpRequest {
-    otp: String,
-    login_token: String,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct Enable2FaRequest {
-    otp: String,
-    enable_2fa_token: String,
-}
-
 #[derive(Serialize, Deserialize, Clone)]
 pub struct AuthResponse<T> {
     success: bool,
@@ -367,19 +318,6 @@ struct OauthClaims {
     sub: String,
     iss: String,
     client_id: String,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct LoginResponse {
-    two_factor_enabled: bool,
-    login_token: Option<String>,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct Generate2FaResponse {
-    qr_code: String,
-    token: String,
-    enable_2fa_token: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -406,13 +344,6 @@ pub struct ReloadOauthClientsResponse {
 #[derive(leptos::Params, PartialEq, Deserialize, Debug)]
 pub struct OAuthRequest {
     pub client_id: String,
-    pub state: String,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct OAuthResponse {
-    pub success: bool,
-    pub authorization_code: String,
     pub state: String,
 }
 

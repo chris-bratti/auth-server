@@ -48,6 +48,7 @@ r2d2 = {version = "0.8.10", optional = true}
 futures-util = "0.3.31"
 actix-cors = {version ="0.7.0", optional = true}
 actix-web-httpauth = {version = "0.8.2", optional = true}
+url = { version = "2.5.4", optional = true }
 
 [features]
 csr = ["leptos/csr", "leptos_meta/csr", "leptos_router/csr"]
@@ -78,7 +79,8 @@ ssr = [
   "dep:serial_test",
   "dep:r2d2",
   "dep:actix-cors",
-  "dep:actix-web-httpauth"
+  "dep:actix-web-httpauth",
+  "dep:url"
 ]
 dotenvy = ["dep:dotenvy"]
 true = ["dep:true"]

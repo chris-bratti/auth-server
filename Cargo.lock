@@ -570,6 +570,7 @@ dependencies = [
  "tokio",
  "totp-rs",
  "true",
+ "url",
  "wasm-bindgen",
 ]
 

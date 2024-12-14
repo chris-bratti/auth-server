@@ -1,14 +1,6 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
-    api_keys (id) {
-        id -> Int4,
-        app_name -> Text,
-        api_key -> Text,
-    }
-}
-
-diesel::table! {
     oauth_clients (id) {
         id -> Int4,
         app_name -> Text,
@@ -70,7 +62,6 @@ diesel::joinable!(refresh_tokens -> oauth_clients (client_id));
 diesel::joinable!(verification_tokens -> users (user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
-    api_keys,
     oauth_clients,
     password_reset_tokens,
     refresh_tokens,
