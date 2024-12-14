@@ -1,4 +1,3 @@
-use auth_server::{server::auth_functions::decrypt_string, EncryptionKey};
 use cfg_if::cfg_if;
 
 cfg_if! {
@@ -38,6 +37,7 @@ cfg_if! {
         use actix_web_httpauth::extractors::basic::BasicAuth;
         use auth_server::server::auth_functions::validate_oauth_token;
         use url::form_urlencoded;
+        use auth_server::{server::auth_functions::decrypt_string, EncryptionKey};
 
         use actix_web::{
             dev::{ServiceRequest},

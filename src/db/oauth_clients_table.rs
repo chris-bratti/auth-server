@@ -95,9 +95,11 @@ pub mod test_oauth_dbs {
         // Read
         let clients = DB_INSTANCE.get_oauth_clients().unwrap().unwrap();
 
-        assert_eq!(clients.len(), 1);
+        let read_client = clients.iter().find(|c| c.client_id == c_id);
 
-        let read_client = clients.get(0).unwrap();
+        assert!(read_client.is_some());
+
+        let read_client = read_client.unwrap();
 
         let decrypted_email =
             decrypt_string(&read_client.contact_email, crate::EncryptionKey::SmtpKey)
