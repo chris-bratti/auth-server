@@ -1,3 +1,4 @@
+pub mod admins_table;
 pub mod db_helper;
 pub mod models;
 pub mod oauth_clients_table;

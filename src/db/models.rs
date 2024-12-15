@@ -4,6 +4,29 @@ use crate::db::schema::*;
 use diesel::prelude::*;
 
 #[derive(Queryable, Selectable, Identifiable, Debug)]
+#[diesel(table_name = crate::db::schema::admins)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct AppAdmin {
+    pub id: i32,
+    pub username: String,
+    pub pass_hash: String,
+    pub initialized: bool,
+    pub two_factor_token: Option<String>,
+    pub locked: bool,
+    pub pass_retries: Option<i32>,
+    pub last_failed_attempt: Option<SystemTime>,
+}
+
+#[derive(Insertable, Debug)]
+#[diesel(table_name = admins)]
+pub struct NewAppAdmin<'a> {
+    pub username: &'a str,
+    pub pass_hash: &'a str,
+    pub initialized: &'a bool,
+    pub locked: &'a bool,
+}
+
+#[derive(Queryable, Selectable, Identifiable, Debug)]
 #[diesel(table_name = crate::db::schema::users)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct DBUser {

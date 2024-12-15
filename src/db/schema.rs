@@ -1,6 +1,19 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
+    admins (id) {
+        id -> Int4,
+        username -> Text,
+        pass_hash -> Text,
+        initialized -> Bool,
+        two_factor_token -> Nullable<Text>,
+        locked -> Bool,
+        pass_retries -> Nullable<Int4>,
+        last_failed_attempt -> Nullable<Timestamp>,
+    }
+}
+
+diesel::table! {
     oauth_clients (id) {
         id -> Int4,
         app_name -> Text,
@@ -62,6 +75,7 @@ diesel::joinable!(refresh_tokens -> oauth_clients (client_id));
 diesel::joinable!(verification_tokens -> users (user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
+    admins,
     oauth_clients,
     password_reset_tokens,
     refresh_tokens,
