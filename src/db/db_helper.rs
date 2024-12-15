@@ -26,14 +26,14 @@ impl DbInstance {
         DbInstance { db_connection }
     }
 
-    pub fn does_user_exist(&self, username: &String) -> Result<bool, DBError> {
-        let db_user = self.get_user_from_username(username)?;
+    pub async fn does_user_exist(&self, username: &String) -> Result<bool, DBError> {
+        let db_user = self.get_user_from_username(username).await?;
 
         Ok(db_user.is_some())
     }
 
-    pub fn get_user_2fa_token(&self, username: &String) -> Result<Option<String>, DBError> {
-        let db_user = self.get_user_from_username(username)?;
+    pub async fn get_user_2fa_token(&self, username: &String) -> Result<Option<String>, DBError> {
+        let db_user = self.get_user_from_username(username).await?;
 
         match db_user {
             Some(user) => Ok(user.two_factor_token),
@@ -41,8 +41,8 @@ impl DbInstance {
         }
     }
 
-    pub fn get_pass_hash_for_username(&self, username: &String) -> Result<String, DBError> {
-        let db_user = self.get_user_from_username(username)?;
+    pub async fn get_pass_hash_for_username(&self, username: &String) -> Result<String, DBError> {
+        let db_user = self.get_user_from_username(username).await?;
 
         match db_user {
             Some(user) => Ok(user.pass_hash),
@@ -50,8 +50,8 @@ impl DbInstance {
         }
     }
 
-    pub fn user_has_2fa_enabled(&self, username: &String) -> Result<bool, DBError> {
-        let db_user = self.get_user_from_username(username)?;
+    pub async fn user_has_2fa_enabled(&self, username: &String) -> Result<bool, DBError> {
+        let db_user = self.get_user_from_username(username).await?;
 
         match db_user {
             Some(user) => Ok(user.two_factor),
@@ -59,8 +59,8 @@ impl DbInstance {
         }
     }
 
-    pub fn is_user_locked(&self, username: &String) -> Result<bool, DBError> {
-        let db_user = self.get_user_from_username(username)?;
+    pub async fn is_user_locked(&self, username: &String) -> Result<bool, DBError> {
+        let db_user = self.get_user_from_username(username).await?;
 
         match db_user {
             Some(user) => {
@@ -133,35 +133,16 @@ impl DbInstance {
     }
 
     pub async fn create_user(&self, user_info: UserInfo) -> Result<User, DBError> {
-        let db_user = self.create_db_user(user_info)?;
+        let db_user = self.create_db_user(user_info).await?;
 
-        let user = User {
-            first_name: db_user.first_name,
-            last_name: db_user.last_name,
-            username: db_user.username,
-            two_factor: false,
-            verified: false,
-            encrypted_email: db_user.email,
-        };
-
-        Ok(user)
+        Ok(User::from(db_user))
     }
 
-    pub fn find_user_by_username(&self, username: &String) -> Result<Option<User>, DBError> {
-        let db_user = self.get_user_from_username(username)?;
+    pub async fn find_user_by_username(&self, username: &String) -> Result<Option<User>, DBError> {
+        let db_user = self.get_user_from_username(username).await?;
 
         match db_user {
-            Some(db_user) => {
-                let user = User {
-                    first_name: db_user.first_name,
-                    last_name: db_user.last_name,
-                    username: db_user.username,
-                    two_factor: db_user.two_factor,
-                    verified: db_user.verified,
-                    encrypted_email: db_user.email,
-                };
-                Ok(Some(user))
-            }
+            Some(db_user) => Ok(Some(User::from(db_user))),
             None => Ok(None),
         }
     }
@@ -177,15 +158,6 @@ impl DbInstance {
         }
 
         Ok(())
-    }
-
-    pub fn get_user_email(&self, username: &String) -> Result<String, DBError> {
-        let db_user = self.get_user_from_username(username)?;
-
-        match db_user {
-            Some(user) => Ok(user.email),
-            None => Err(DBError::NotFound(username.clone())),
-        }
     }
 }
 
@@ -222,6 +194,7 @@ pub mod test_db_helpers {
         // Test if user exists
         let user_exists = db
             .does_user_exist(&created_user.username)
+            .await
             .expect("Error searching for user");
 
         assert!(user_exists);
@@ -229,6 +202,7 @@ pub mod test_db_helpers {
         // Verify password hash is retrieved correctly
         let pass_hash = db
             .get_pass_hash_for_username(&created_user.username)
+            .await
             .expect("Error getting password hash");
 
         assert_eq!(pass_hash, user_info.pass_hash);
@@ -236,6 +210,7 @@ pub mod test_db_helpers {
         // Search for user by username
         let user_response = db
             .find_user_by_username(&user_info.username)
+            .await
             .expect("Error searching for user");
 
         assert!(user_response.is_some());
@@ -253,6 +228,7 @@ pub mod test_db_helpers {
         // Verify the user does not exist
         let user_exists = db
             .does_user_exist(&created_user.username)
+            .await
             .expect("Error searching for user");
 
         assert!(!user_exists);
@@ -260,6 +236,7 @@ pub mod test_db_helpers {
         // Search for user by username
         let user_response = db
             .find_user_by_username(&user_info.username)
+            .await
             .expect("Error searching for user");
 
         assert!(user_response.is_none());

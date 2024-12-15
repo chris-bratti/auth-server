@@ -1,6 +1,6 @@
 use std::time::SystemTime;
 
-use crate::{db::schema::*, DBError};
+use crate::db::schema::*;
 use diesel::prelude::*;
 
 #[derive(Queryable, Selectable, Identifiable, Debug)]
@@ -19,15 +19,6 @@ pub struct DBUser {
     pub locked: bool,
     pub pass_retries: Option<i32>,
     pub last_failed_attempt: Option<SystemTime>,
-}
-
-#[derive(Queryable, Selectable, Identifiable, Debug, serde::Deserialize, serde::Serialize)]
-#[diesel(table_name = crate::db::schema::api_keys)]
-#[diesel(check_for_backend(diesel::pg::Pg))]
-pub struct ApiKey {
-    pub id: i32,
-    pub app_name: String,
-    pub api_key: String,
 }
 
 #[derive(Queryable, Selectable, Identifiable, Debug, serde::Deserialize, serde::Serialize)]
@@ -114,13 +105,6 @@ pub struct NewDBUser<'a> {
 }
 
 #[derive(Insertable, Debug)]
-#[diesel(table_name = api_keys)]
-pub struct NewApiKey<'a> {
-    pub app_name: &'a str,
-    pub api_key: &'a str,
-}
-
-#[derive(Insertable, Debug)]
 #[diesel(table_name = oauth_clients)]
 pub struct NewOauthClient<'a> {
     pub app_name: &'a str,
@@ -133,7 +117,7 @@ pub struct NewOauthClient<'a> {
 use diesel::{r2d2::ConnectionManager, PgConnection};
 use r2d2::{Pool, PooledConnection};
 
-use crate::get_env_variable;
+use crate::{get_env_variable, DBError};
 
 pub struct DbConnection {
     connection_pool: Pool<ConnectionManager<PgConnection>>,

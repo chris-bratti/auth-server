@@ -1,0 +1,123 @@
+body {
+	margin: 0;
+	padding: 0;
+	font-family: Arial, sans-serif;
+	background-color: #1e1e1e;
+	color: #fff;
+}
+.dark-mode{
+	background-color: #1e1e1e;
+	color: #fff;
+}
+.container {
+	width: 100%;
+	height: 100vh;
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	flex-direction: column;
+	color:    #fff;
+}
+.button-container {
+	width: 100%;
+	height: 100vh;
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	flex-direction: column;
+	color:    #fff;
+}
+.heading {
+	font-size: 64px;
+	margin-bottom: 20px;
+}
+.buttons {
+	text-align: center;
+}
+.button {
+	padding: 10px 20px;
+	margin: 10px;
+	border: none;
+	border-radius: 4px;
+	background-color: #007bff;
+	color: #fff;
+	text-decoration: none;
+	font-size: 18px;
+	cursor: pointer;
+	transition: background-color 0.3s ease;
+}
+.button:hover {
+	background-color: #0056b3;
+}
+.login-form {
+	background-color: #333;
+	padding: 40px;
+	border-radius: 8px;
+	box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+	text-align: center;
+	color:    #fff;
+}
+.login-form h2 {
+	margin-bottom: 20px;
+	text-align: center;
+}
+::-webkit-input-placeholder { /* WebKit, Blink, Edge */
+    color:    #fff;
+}
+:-moz-placeholder { /* Mozilla Firefox 4 to 18 */
+   color:    #fff;
+   opacity:  1;
+}
+::-moz-placeholder { /* Mozilla Firefox 19+ */
+   color:    #fff;
+   opacity:  1;
+}
+:-ms-input-placeholder { /* Internet Explorer 10-11 */
+   color:    #fff;
+}
+::-ms-input-placeholder { /* Microsoft Edge */
+   color:    #fff;
+}
+
+::placeholder { /* Most modern browsers support this now. */
+   color:    #fff;
+}
+
+.login-form input[type="email"],
+.login-form input[type="text"],
+.login-form input[type="password"],
+.login-form input[type="submit"],
+.login-form A {
+	width: 100%;
+	padding: 10px;
+	margin-bottom: 20px;
+	border: none;
+	border-radius: 4px;
+	background-color: #444;
+	color: #fff;
+	box-sizing: border-box;
+	text-decoration: none;
+	display: inline-block;
+}
+.login-form input[type="submit"] {
+	background-color: #007bff;
+	cursor: pointer;
+}
+.login-form input[type="submit"]:hover {
+	background-color: #0056b3;
+}
+.forgot-password-btn {
+	background-color: #444;
+}
+.forgot-password-btn:hover {
+	background-color: #666;
+}
+
+input:valid {
+	background-color: palegreen;
+  }
+  
+  input:invalid {
+	background-color: lightpink;
+  }
+ 

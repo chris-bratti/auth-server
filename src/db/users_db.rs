@@ -1,6 +1,6 @@
 use crate::db::models::{DBUser, NewDBUser};
 use crate::db::schema::{self};
-use crate::{DBError, UserInfo};
+use crate::{decrypt_string, encrypt_string, DBError, EncryptionKey, UserInfo};
 use chrono::{DateTime, Utc};
 use diesel::{prelude::*, select};
 use schema::users::dsl::*;
@@ -9,14 +9,19 @@ use super::db_helper::DbInstance;
 use super::schema::users;
 
 impl DbInstance {
-    pub fn create_db_user(&self, user_info: UserInfo) -> Result<DBUser, DBError> {
+    pub async fn create_db_user(&self, user_info: UserInfo) -> Result<DBUser, DBError> {
         let mut conn = self.db_connection.connect()?;
+
+        let encrypted_email = encrypt_string(&user_info.email, crate::EncryptionKey::SmtpKey)
+            .await
+            .unwrap();
+
         let new_user = NewDBUser {
             first_name: &user_info.first_name,
             last_name: &user_info.last_name,
             username: &user_info.username,
             pass_hash: &user_info.pass_hash,
-            email: &user_info.email,
+            email: &encrypted_email,
             verified: &false,
             two_factor: &false,
             locked: &false,
@@ -29,16 +34,25 @@ impl DbInstance {
             .map_err(|err| DBError::Error(format!("Error creating user {}", err)))
     }
 
-    pub fn get_user_from_username(&self, uname: &String) -> Result<Option<DBUser>, DBError> {
+    pub async fn get_user_from_username(&self, uname: &String) -> Result<Option<DBUser>, DBError> {
         let mut connection = self.db_connection.connect()?;
 
-        users
+        let user_result: Option<DBUser> = users
             .filter(username.eq(uname))
             .limit(1)
             .select(DBUser::as_select())
             .first(&mut connection)
             .optional()
-            .map_err(DBError::from)
+            .map_err(DBError::from)?;
+
+        if let Some(mut db_user) = user_result {
+            db_user.email = decrypt_string(&db_user.email, EncryptionKey::SmtpKey)
+                .await
+                .unwrap();
+            Ok(Some(db_user))
+        } else {
+            Ok(None)
+        }
     }
 
     pub fn unlock_db_user(&self, uname: &String) -> Result<(), DBError> {
@@ -183,8 +197,8 @@ pub mod test_db {
         static ref DB_INSTANCE: DbInstance = DbInstance::new();
     }
 
-    #[test]
-    fn test_user_crud() {
+    #[tokio::test]
+    async fn test_user_crud() {
         let user_info = UserInfo {
             first_name: String::from("Foo"),
             last_name: String::from("Barley"),
@@ -196,6 +210,7 @@ pub mod test_db {
         // Create
         let db_user = DB_INSTANCE
             .create_db_user(user_info.clone())
+            .await
             .expect("Error creating user");
 
         assert_eq!(db_user.first_name, user_info.first_name);
@@ -206,6 +221,7 @@ pub mod test_db {
         // Read
         let read_db_user = DB_INSTANCE
             .get_user_from_username(&user_info.username)
+            .await
             .expect("Error reading user from db");
 
         assert!(read_db_user.is_some());
@@ -258,8 +274,8 @@ pub mod test_db {
         assert_eq!(count, 1);
     }
 
-    #[test]
-    fn test_reset_tokens() {
+    #[tokio::test]
+    async fn test_reset_tokens() {
         let user_info = UserInfo {
             first_name: String::from("Foo"),
             last_name: String::from("Barley"),
@@ -271,6 +287,7 @@ pub mod test_db {
         // Create a new user
         let _db_user = DB_INSTANCE
             .create_db_user(user_info.clone())
+            .await
             .expect("Error creating user");
 
         let reset_token = String::from("superSecrettokenHash");
@@ -317,8 +334,8 @@ pub mod test_db {
         assert_eq!(count, 1);
     }
 
-    #[test]
-    fn test_verification_tokens() {
+    #[tokio::test]
+    async fn test_verification_tokens() {
         let user_info = UserInfo {
             first_name: String::from("Foo"),
             last_name: String::from("Barley"),
@@ -330,6 +347,7 @@ pub mod test_db {
         // Create a new user
         let _db_user = DB_INSTANCE
             .create_db_user(user_info.clone())
+            .await
             .expect("Error creating user");
 
         let verification_token = String::from("superSecrettokenHash");

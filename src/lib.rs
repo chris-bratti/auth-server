@@ -1,14 +1,41 @@
 use core::{fmt, str::FromStr};
-
-use actix_web::{http::StatusCode, HttpResponse, ResponseError};
-use redis::RedisError;
+use leptos_router::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use server::auth_functions::*;
-use thiserror::Error;
 
+use cfg_if::cfg_if;
+
+cfg_if! {
+    if #[cfg(feature = "ssr")] {
+        use actix_web::{http::StatusCode, HttpResponse, ResponseError};
+        use thiserror::Error;
+    use leptos::ServerFnError;
+    use redis::RedisError;
+    use server::auth_functions::*;
+    use db::models::DBUser;
+    }
+}
+pub mod client;
+pub mod controllers;
+
+#[cfg(feature = "ssr")]
 pub mod db;
+#[cfg(feature = "ssr")]
 pub mod server;
+
+pub mod app;
+pub use app::*;
+
+#[cfg(feature = "hydrate")]
+#[wasm_bindgen::prelude::wasm_bindgen]
+pub fn hydrate() {
+    use app::*;
+    use leptos::*;
+
+    console_error_panic_hook::set_once();
+
+    mount_to_body(App);
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 pub enum AuthError {
@@ -23,12 +50,21 @@ pub enum AuthError {
     InvalidRequest(String),
 }
 
+#[cfg(feature = "ssr")]
+impl AuthError {
+    pub fn to_server_fn_error(self) -> ServerFnError<AuthError> {
+        ServerFnError::WrappedServerError(self)
+    }
+}
+
+#[cfg(feature = "ssr")]
 impl From<RedisError> for AuthError {
     fn from(err: RedisError) -> Self {
         AuthError::InternalServerError(err.to_string())
     }
 }
 
+#[cfg(feature = "ssr")]
 impl From<DBError> for AuthError {
     fn from(err: DBError) -> Self {
         AuthError::InternalServerError(err.to_string())
@@ -41,12 +77,14 @@ impl From<aes_gcm::Error> for AuthError {
     }
 }
 
+#[cfg(feature = "ssr")]
 impl From<jsonwebtoken::errors::Error> for AuthError {
     fn from(err: jsonwebtoken::errors::Error) -> Self {
         AuthError::InternalServerError(err.to_string())
     }
 }
 
+#[cfg(feature = "ssr")]
 impl ResponseError for AuthError {
     fn error_response(&self) -> HttpResponse {
         let error_message = format!("{}", self);
@@ -151,6 +189,21 @@ impl FromStr for AuthError {
     }
 }
 
+#[cfg(feature = "ssr")]
+#[derive(Error, Debug)]
+pub enum DBError {
+    #[error("User not found: {0}")]
+    NotFound(String),
+    #[error("Internal server error: {0}")]
+    InternalServerError(#[from] diesel::result::Error),
+    #[error("Error: {0}")]
+    Error(String),
+    #[error("Database connection error: {0}")]
+    ConnectionError(#[from] diesel::ConnectionError),
+    #[error("Token invalid or expired")]
+    TokenExpired,
+}
+
 pub enum EncryptionKey {
     SmtpKey,
     TwoFactorKey,
@@ -158,6 +211,7 @@ pub enum EncryptionKey {
     OauthKey,
 }
 
+#[cfg(feature = "ssr")]
 impl EncryptionKey {
     pub fn get(&self) -> String {
         let key = match self {
@@ -178,7 +232,42 @@ pub struct User {
     username: String,
     two_factor: bool,
     verified: bool,
-    encrypted_email: String,
+    email: String,
+}
+
+impl From<User> for UserBasicInfo {
+    fn from(user: User) -> Self {
+        UserBasicInfo {
+            first_name: user.first_name,
+            last_name: user.last_name,
+            username: user.username,
+            two_factor: user.two_factor,
+            verified: user.verified,
+        }
+    }
+}
+
+#[cfg(feature = "ssr")]
+impl From<DBUser> for User {
+    fn from(db_user: DBUser) -> Self {
+        User {
+            first_name: db_user.first_name,
+            last_name: db_user.last_name,
+            username: db_user.username,
+            two_factor: db_user.two_factor,
+            verified: db_user.verified,
+            email: db_user.email,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
+pub struct UserBasicInfo {
+    first_name: String,
+    last_name: String,
+    username: String,
+    two_factor: bool,
+    verified: bool,
 }
 
 pub enum GrantType {
@@ -229,20 +318,6 @@ impl AuthType {
     }
 }
 
-#[derive(Error, Debug)]
-pub enum DBError {
-    #[error("User not found: {0}")]
-    NotFound(String),
-    #[error("Internal server error: {0}")]
-    InternalServerError(#[from] diesel::result::Error),
-    #[error("Error: {0}")]
-    Error(String),
-    #[error("Database connection error: {0}")]
-    ConnectionError(#[from] diesel::ConnectionError),
-    #[error("Token invalid or expired")]
-    TokenExpired,
-}
-
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct UserInfo {
     pub username: String,
@@ -258,58 +333,10 @@ pub struct AuthRequest {
     pub data: Option<Value>,
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct LoginRequest {
-    pub password: String,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct SignupRequest {
-    first_name: String,
-    last_name: String,
-    email: String,
-    new_password_request: NewPasswordRequest,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct NewPasswordRequest {
-    password: String,
-    confirm_password: String,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct ChangePasswordRequest {
-    new_password_request: NewPasswordRequest,
-    current_password: String,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct ResetPasswordRequest {
-    new_password_request: NewPasswordRequest,
-    reset_token: String,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct VerifyUserRequest {
-    verification_token: String,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct VerifyOtpRequest {
-    otp: String,
-    login_token: String,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct Enable2FaRequest {
-    otp: String,
-    enable_2fa_token: String,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct AuthResponse<'a, T> {
+#[derive(Serialize, Deserialize, Clone)]
+pub struct AuthResponse<T> {
     success: bool,
-    message: &'a str,
+    message: String,
     response: Option<T>,
 }
 
@@ -327,19 +354,6 @@ struct OauthClaims {
     sub: String,
     iss: String,
     client_id: String,
-}
-
-#[derive(Serialize, Deserialize)]
-struct LoginResponse {
-    two_factor_enabled: bool,
-    login_token: Option<String>,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct Generate2FaResponse {
-    qr_code: String,
-    token: String,
-    enable_2fa_token: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -363,16 +377,9 @@ pub struct ReloadOauthClientsResponse {
     pub clients_loaded: i32,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(leptos::Params, PartialEq, Deserialize, Debug)]
 pub struct OAuthRequest {
     pub client_id: String,
-    pub state: String,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct OAuthResponse {
-    pub success: bool,
-    pub authorization_code: String,
     pub state: String,
 }
 
@@ -405,4 +412,11 @@ pub struct RefreshTokenResponse {
     pub access_token: String,
     pub username: String,
     pub expiry: i64,
+}
+
+#[derive(Serialize)]
+pub struct UserInfoResponse {
+    pub success: bool,
+    pub user_data: User,
+    pub timestamp: i64,
 }

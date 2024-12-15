@@ -1,287 +1,142 @@
 # API Endpoints
 
-This API features a single endpoint for authentication requests
+This API's only public endpoints are for the OAuth flow, all user authentication is done through the UI.
 
-## Auth
-Endpoint to handle all auth requests. Use the `X-Request-Type` header to indicate the type of auth request
+## Clients
+Endpoints to handle OAuth client transactions
 
-### Sign Up
-**Creates a new user and emails a `verification_token` to their provided email**
+### Register Client
+**Registers a new OAuth client and reloads client cache**
 
 Request
 ```
-POST /auth HTTP/1.1
-Host: localhost:8080
-X-Request-Type: signup
-X-App-Name: demo_app
-X-Api-Key: generated-api-key
+POST /clients/register HTTP/1.1
+Host: localhost:3000
+X-Admin-Key: examplepassword
 Content-Type: application/json
 
 {
-    "username": "testuser",
-    "data":{
+    "app_name": "Test App",
+    "contact_email": "contact@app.com",
+    "redirect_url" : "https://localhost:8080/test"
+}
+
+```
+Response
+```
+{
+    "success": true,
+    "client_id": "client-id",
+    "client_secret": "client-secret",
+    "redirect_url": "https://localhost:8080/test"
+}
+```
+
+## Token
+
+OAuth endpoint to retrieve an `access_token` and `refresh_token` to make requests to the `/user` endpoint.
+
+`access_tokens`, `refresh_tokens`, and `authorization_codes` are all **user-locked**, which means they are only valid for the username that gets bound to the `authorization_code` during the user login process.
+
+The `Authorization` header requires a base64 encoded `client-id:client-secret` string
+
+### Authorization code
+**Gets an access_token and refresh_token given a valid client**
+
+Request
+```
+POST /oauth/token HTTP/1.1
+Host: localhost:3000
+Content-Type: application/x-www-form-urlencoded
+Authorization: Basic Base64(client-id:client-secret)
+
+grant_type=authorization_code&authorization_code=authorization-code
+
+```
+Response
+```
+{
+    "success": true,
+    "access_token": "JWT-access-token",
+    "refresh_token": "refresh-token",
+    "username": "user",
+    "expiry": 1734285694
+}
+```
+- `access_token` is a JWT token to be used in the Bearer header for the `/user` endpoints. Expires after 10 minutes
+- `refresh_token` can be used to get a new `access_token` using the `refresh_token` `grant_type`. Expires after 30 days
+
+### Refresh token
+**Gets an `access_token` given a `refresh_token` and valid client header**
+
+Request
+```
+POST /oauth/token HTTP/1.1
+Host: localhost:3000
+Content-Type: application/x-www-form-urlencoded
+Authorization: Basic Base64(client-id:client-secret)
+
+grant_type=refresh_token&refresh_token=refresh-token
+```
+
+Response
+```
+{
+    "success": true,
+    "access_token": "JWT-access-token",
+    "username": "user",
+    "expiry": 1734285694
+}
+```
+- `access_token` is a JWT token to be used for in the Bearer header for the user endpoints. Expires after 10 minutes
+
+## User
+
+Endpoints to request user data, requires valid `access_token`
+
+### Info
+**Gets user info**
+
+Request
+```
+GET /user/info?username=user HTTP/1.1
+Host: localhost:3000
+Authorization: Bearer access-token
+```
+Response
+```
+{
+    "success": true,
+    "user_data": {
         "first_name": "Test",
         "last_name": "User",
-        "email": "testuser@example.com",
-        "new_password_request":{
-            "password": "Password1234!",
-            "confirm_password": "Password1234!"
-        }
-    }
+        "username": "user",
+        "two_factor": false,
+        "verified": true,
+        "email": "testuser@gmail.com"
+    },
+    "timestamp": 1734286255
 }
+```
+- `two_factor` is a bool field indicating if the user has 2fa enabled for their account
+- `verified` is a bool field indicating if the user has verified their account
+
+## Internal
+
+### Reload OAuth clients
+**Internal endpoint to load OAuth clients from DB into Redis cache**
+
+Request
+```
+POST /internal/reload-clients HTTP/1.1
+Host: localhost:3000
+X-Admin-Key: examplepassword
 ```
 Response
 ```
 {
     "success": true,
-    "message": "New user enrolled",
-    "response": null
+    "clients_loaded": 1
 }
 ```
-
-### Login
-**Logs user in**
-
-Request
-```
-POST /auth HTTP/1.1
-Host: localhost:8080
-X-Request-Type: login
-X-App-Name: demo_app
-X-Api-Key: generated-api-key
-Content-Type: application/json
-
-{
-    "username": "testuser",
-    "data":{
-        "password": "Password1234!"
-    }
-}
-```
-Response
-```
-{
-    "success": false,
-    "message": "User has 2FA enabled",
-    "response": {
-        "two_factor_enabled": true,
-        "login_token": "logintoken"
-    }
-}
-```
-- `two_factor_enabled` specifies if the user has 2 factor auth enabled
-- `login_token` is the JWT-based token to pass to the `verify_top` request to complete login (if user enabled 2fa)
-
-### Verify User
-**Verifies a user given a `verification_token`**
-
-Request
-```
-POST /auth HTTP/1.1
-Host: localhost:8080
-X-Request-Type: verify_user
-X-App-Name: demo_app
-X-Api-Key: generated-api-key
-Content-Type: application/json
-
-{
-    "username": "testuser",
-    "data": {
-        "verification_token": "verifcationtoken"
-    }
-}
-```
-- `verification_token` is the token emailed to the user
-
-Response
-```
-{
-    "success": true,
-    "message": "User verified",
-    "response": null
-}
-```
-
-### Request Reset Password
-**Makes a password reset token and sends it to the user's email**
-
-Request
-```
-POST /auth HTTP/1.1
-Host: localhost:8080
-X-Request-Type: request_password_reset
-X-App-Name: demo_app
-X-Api-Key: generated-api-key
-Content-Type: application/json
-Content-Length: 30
-
-{
-    "username": "testuser"
-}
-```
-Response
-```
-{
-    "success": true,
-    "message": "Password reset request successful",
-    "response": null
-}
-```
-### Reset Password
-**Resets a password given a password reset token**
-
-Request
-```
-POST /auth HTTP/1.1
-Host: localhost:8080
-X-Request-Type: reset_password
-X-App-Name: demo_app
-X-Api-Key: generated-api-key
-Content-Type: application/json
-
-{
-    "username": "testuser",
-    "data":{
-        "reset_token": "reset_token",
-        "new_password_request" : {
-            "password": "NewPass1234!",
-            "confirm_password": "NewPass1234!"
-        }
-    }
-}
-```
-- `reset_token` is the token emailed to the user
-
-Response
-```
-{
-    "success": true,
-    "message": "Password reset successful",
-    "response": null
-}
-```
-### Change Password
-**Updates a user password given their current password**
-
-Request
-```
-POST /auth HTTP/1.1
-Host: localhost:8080
-X-Request-Type: change_password
-X-App-Name: demo_app
-X-Api-Key: generated-api-key
-Content-Type: application/json
-
-{
-    "username": "testuser",
-    "data":{
-        "current_password": "Password1234!",
-        "new_password_request" : {
-            "password": "NewPass1234!",
-            "confirm_password": "NewPass1234!"
-        }
-    }
-}
-```
-Response
-```
-{
-    "success": true,
-    "message": "Password change successful",
-    "response": null
-}
-```
-
-### Generate 2FA
-**Generates a 2FA code for user to enroll their device**
-
-Request
-```
-POST /auth HTTP/1.1
-Host: localhost:8080
-X-Request-Type: generate_2fa
-X-App-Name: demo_app
-X-Api-Key: generated-api-key
-Content-Type: application/json
-
-{
-    "username": "testuser"
-}
-```
-Response
-```
-{
-    "qr_code": "base64encodedPNG==",
-    "token": "generatedtoken",
-    "enable_2fa_token": "generatedtoken"
-}
-```
-- `qr_code` is a base64 encoded QR code that a user can use to enroll their device
-- `token` is the 2FA token for the user
-- `enabled_2fa_token` is a JWT-based token to pass to the `enable_2fa` call to enable 2FA
-
-### Enable 2FA
-**Enables 2FA for a user given a `enable_2fa_token` JWT**
-
-Request
-```
-POST /auth HTTP/1.1
-Host: localhost:8080
-X-Request-Type: enable_2fa
-X-App-Name: demo_app
-X-Api-Key: generated-api-key
-Content-Type: application/json
-
-{
-    "username": "testuser",
-    "data":{
-        "two_factor_token": "randomgeneratedtoken",
-        "otp": "1111",
-        "enable_2fa_token": "randomgeneratedtoken"
-    } 
-}
-```
-- `two_factor_token` is the `token` from the `generate_2fa` call
-- `enable_2fa_token` is the `enable_2fa_token` JWT from the `generate_2fa` call
-- `otp` is the user provided One Time Password from their 2FA service to validate they were enrolled correctly
-
-Response
-```
-{
-    "success": true,
-    "message": "2FA enabled",
-    "response": null
-}
-```
-
-### Verify OTP
-**Verifies the 2FA TOTP token provided by a user and logs user in to session**
-
-Request
-```
-POST /auth HTTP/1.1
-Host: localhost:8080
-X-Request-Type: verify_otp
-X-App-Name: demo_app
-X-Api-Key: generated-api-key
-Content-Type: application/json
-
-{
-    "username": "testuser",
-    "data":{
-        "otp": "1111",
-        "login_token": "randomgeneratedtoken"
-    }
-}
-```
-- `otp` is the user-provided TOTP code from their 2FA app
-- `login_token` is the `login_token` JWT from the `login` call
-
-Response
-```
-{
-    "success": true,
-    "message": "OTP was successful",
-    "response": null
-}
-```
+- `clients_loaded` indicates how many clients were loaded from the DB
