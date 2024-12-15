@@ -2,7 +2,7 @@
 use crate::{
     client::client_helpers::{get_user_from_session, user_server_side_redirect},
     controllers::*,
-    OAuthRequest, User,
+    OAuthRequest, UserBasicInfo,
 };
 use leptos::*;
 use leptos_router::*;
@@ -476,8 +476,8 @@ pub fn ForgotPassword() -> impl IntoView {
 
 #[component]
 pub fn EnableTwoFactor(
-    user: ReadSignal<User>,
-    set_user: WriteSignal<User>,
+    user: ReadSignal<UserBasicInfo>,
+    set_user: WriteSignal<UserBasicInfo>,
     set_enable_two_factor: WriteSignal<bool>,
 ) -> impl IntoView {
     let qr_code = create_resource(
@@ -524,7 +524,7 @@ pub fn EnableTwoFactor(
                     </ActionForm>
                     {move || {
                         if value().is_some() && value().unwrap().unwrap() {
-                            set_user(User{
+                            set_user(UserBasicInfo{
                                 two_factor: true,
                                 ..user.get()
                             });

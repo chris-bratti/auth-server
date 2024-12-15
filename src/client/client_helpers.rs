@@ -9,14 +9,15 @@ cfg_if! {
         use leptos_actix::extract;
         use actix_web::HttpRequest;
 
-        use crate::{db::db_helper::DbInstance};
-        use crate::server::oauth_handlers::handle_request_oauth_token;
-        use crate::OAuthRedirect;
+        use crate::{db::db_helper::DbInstance,
+            OAuthRedirect,
+            UserBasicInfo,
+            server::oauth_handlers::handle_request_oauth_token};
     }
 }
 
 #[server]
-pub async fn get_user_from_session() -> Result<crate::User, ServerFnError<AuthError>> {
+pub async fn get_user_from_session() -> Result<crate::UserBasicInfo, ServerFnError<AuthError>> {
     let (_, db_instance) = get_request_data().await?;
 
     let user: Option<Identity> = extract().await.map_err(|_| {
@@ -25,9 +26,9 @@ pub async fn get_user_from_session() -> Result<crate::User, ServerFnError<AuthEr
 
     // If user exists in session, gets User entry from DB
     if let Some(user) = user {
-        match db_instance.find_user_by_username(&user.id().unwrap()) {
+        match db_instance.find_user_by_username(&user.id().unwrap()).await {
             Ok(some_user) => match some_user {
-                Some(user) => Ok(user),
+                Some(user) => Ok(UserBasicInfo::from(user)),
                 None => Err(AuthError::Error("User not found".to_string()).to_server_fn_error()),
             },
             Err(err) => {

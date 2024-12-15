@@ -12,6 +12,7 @@ cfg_if! {
     use leptos::ServerFnError;
     use redis::RedisError;
     use server::auth_functions::*;
+    use db::models::DBUser;
     }
 }
 pub mod client;
@@ -231,7 +232,42 @@ pub struct User {
     username: String,
     two_factor: bool,
     verified: bool,
-    encrypted_email: String,
+    email: String,
+}
+
+impl From<User> for UserBasicInfo {
+    fn from(user: User) -> Self {
+        UserBasicInfo {
+            first_name: user.first_name,
+            last_name: user.last_name,
+            username: user.username,
+            two_factor: user.two_factor,
+            verified: user.verified,
+        }
+    }
+}
+
+#[cfg(feature = "ssr")]
+impl From<DBUser> for User {
+    fn from(db_user: DBUser) -> Self {
+        User {
+            first_name: db_user.first_name,
+            last_name: db_user.last_name,
+            username: db_user.username,
+            two_factor: db_user.two_factor,
+            verified: db_user.verified,
+            email: db_user.email,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
+pub struct UserBasicInfo {
+    first_name: String,
+    last_name: String,
+    username: String,
+    two_factor: bool,
+    verified: bool,
 }
 
 pub enum GrantType {
@@ -376,4 +412,11 @@ pub struct RefreshTokenResponse {
     pub access_token: String,
     pub username: String,
     pub expiry: i64,
+}
+
+#[derive(Serialize)]
+pub struct UserInfoResponse {
+    pub success: bool,
+    pub user_data: User,
+    pub timestamp: i64,
 }

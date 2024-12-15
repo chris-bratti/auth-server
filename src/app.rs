@@ -1,14 +1,15 @@
 #![allow(non_snake_case)]
 use crate::client::auth_pages::*;
+use crate::client::client_helpers::get_user_from_session;
 use crate::controllers::Logout;
-use crate::{client::client_helpers::get_user_from_session, User};
+use crate::UserBasicInfo;
 use leptos::*;
 use leptos_meta::*;
 use leptos_router::*;
 
 #[derive(Clone)]
 struct UserContext {
-    pub user_signal: (ReadSignal<User>, WriteSignal<User>),
+    pub user_signal: (ReadSignal<UserBasicInfo>, WriteSignal<UserBasicInfo>),
 }
 
 #[component]
@@ -122,7 +123,7 @@ pub fn UserVerificationWrapper(children: ChildrenFn) -> impl IntoView {
 
 #[component]
 pub fn UserProfile() -> impl IntoView {
-    let (user, set_user): (ReadSignal<User>, WriteSignal<User>) =
+    let (user, set_user): (ReadSignal<UserBasicInfo>, WriteSignal<UserBasicInfo>) =
         expect_context::<UserContext>().user_signal;
     let (update_password, set_update_password) = create_signal(false);
     let (enable_two_factor, set_enable_two_factor) = create_signal(false);

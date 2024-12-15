@@ -67,6 +67,7 @@ pub async fn create_2fa_for_user(username: &String) -> Result<(String, String), 
 pub async fn get_totp(username: &String, db: &web::Data<DbInstance>) -> Result<String, AuthError> {
     let token = db
         .get_user_2fa_token(&username)
+        .await
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
     match token {
         Some(token) => {
@@ -293,7 +294,7 @@ pub async fn validate_pending_token(
         return Err(AuthError::InvalidCredentials);
     }
 
-    let user_exists = db.does_user_exist(&token.sub)?;
+    let user_exists = db.does_user_exist(&token.sub).await?;
 
     if token.scope == scope && user_exists {
         Ok(())

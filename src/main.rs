@@ -27,22 +27,14 @@ cfg_if! {
         use actix_session::{config::PersistentSession, storage::RedisSessionStore, SessionMiddleware};
         use redis::{Client, Commands};
         use actix_files::Files;
-        use auth_server::app::*;
+        use auth_server::{app::*, server::auth_functions::{validate_oauth_token, decrypt_string}, EncryptionKey};
         use leptos::*;
         use leptos_actix::{generate_route_list, LeptosRoutes};
-        use actix_web::{web, App, HttpServer};
-        use actix_web::middleware::Logger;
+        use actix_web::{web, App, HttpServer, middleware::Logger, dev::{ServiceRequest},
+        Error};
         use env_logger::Env;
-        use actix_web_httpauth::extractors::bearer::BearerAuth;
-        use actix_web_httpauth::extractors::basic::BasicAuth;
-        use auth_server::server::auth_functions::validate_oauth_token;
+        use actix_web_httpauth::extractors::{bearer::BearerAuth, basic::BasicAuth};
         use url::form_urlencoded;
-        use auth_server::{server::auth_functions::decrypt_string, EncryptionKey};
-
-        use actix_web::{
-            dev::{ServiceRequest},
-            Error,
-        };
 
         async fn basic_validator(
             req: ServiceRequest,
@@ -96,6 +88,8 @@ cfg_if! {
                     if validate_oauth_token(credentials.token().to_string(), redis_client, &username).await.is_err(){
                         return Err((actix_web::error::ErrorUnauthorized("Invalid client info"), req));
                     }
+
+                    req.extensions_mut().insert(username);
 
                     Ok(req)
                 },
@@ -169,6 +163,12 @@ async fn main() -> std::io::Result<()> {
             .wrap(Logger::default())
             .wrap(Logger::new("%a %{User-Agent}i"))
             .wrap(actix_web::middleware::Logger::default())
+            // Routes needing bearer auth validation
+            .service(
+                web::scope("/user")
+                    .wrap(HttpAuthentication::bearer(bearer_validator))
+                    .route("/info", web::get().to(get_user_info)),
+            )
             // serve JS/WASM/CSS from `pkg`
             .service(Files::new("/pkg", format!("{site_root}/pkg")))
             // serve other assets from the `assets` directory
@@ -205,12 +205,6 @@ async fn main() -> std::io::Result<()> {
                     .wrap(HttpAuthentication::basic(basic_validator))
                     .route("/token", web::post().to(get_token)),
             )
-            // Routes needing bearer auth validation
-            .service(
-                web::scope("/user")
-                    .wrap(HttpAuthentication::bearer(bearer_validator))
-                    .route("/test", web::post().to(test_bearer)),
-            )
     })
     .bind_openssl(&addr, ssl_builder)?
     .run()
@@ -219,10 +213,28 @@ async fn main() -> std::io::Result<()> {
 
 // Placeholder for endpoints accessing user information
 #[cfg(feature = "ssr")]
-async fn test_bearer() -> Result<impl Responder, AuthError> {
-    println!("You've made it!");
+async fn get_user_info(
+    db_instance: web::Data<DbInstance>,
+    request: HttpRequest,
+) -> Result<impl Responder, AuthError> {
+    use auth_server::UserInfoResponse;
 
-    Ok(HttpResponse::Ok().body("Client info validated!"))
+    let username = request
+        .extensions()
+        .get::<String>()
+        .ok_or_else(|| AuthError::InvalidRequest("Username not present in request!".to_string()))?
+        .to_string();
+
+    let user = db_instance
+        .find_user_by_username(&username)
+        .await?
+        .ok_or_else(|| AuthError::InvalidRequest("User not found!".to_string()))?;
+
+    Ok(HttpResponse::Ok().json(UserInfoResponse {
+        success: true,
+        user_data: user,
+        timestamp: chrono::Utc::now().timestamp(),
+    }))
 }
 
 // Handler for getting oauth token using authorization code or refresh token

@@ -31,6 +31,7 @@ pub async fn handle_login(
 
     if db_instance
         .is_user_locked(&username)
+        .await
         .map_err(|_| AuthError::InvalidCredentials)?
     {
         println!("User is locked");
@@ -40,6 +41,7 @@ pub async fn handle_login(
     // Retrieve pass hash from DB
     let pass_result = db_instance
         .get_pass_hash_for_username(&username)
+        .await
         .map_err(|_| AuthError::InvalidCredentials);
 
     // Verify password hash with Argon2
@@ -59,6 +61,7 @@ pub async fn handle_login(
 
     let two_factor = db_instance
         .user_has_2fa_enabled(&username)
+        .await
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
     println!("User OTP: {}", two_factor);
@@ -128,7 +131,7 @@ pub async fn handle_signup(
     let username: String = username.trim().to_lowercase();
 
     // Checks db to ensure unique usernames
-    match db_instance.does_user_exist(&username) {
+    match db_instance.does_user_exist(&username).await {
         Ok(username_exists) => {
             if username_exists {
                 return Err(AuthError::Error("Invalid username!".to_string()));
@@ -149,15 +152,13 @@ pub async fn handle_signup(
     // Hash password
     let pass_hash = hash_string(&password);
 
-    let encrypted_email = encrypt_string(&email, EncryptionKey::SmtpKey);
-
     // Create user info to interact with DB
     let user_info = UserInfo {
         username: username.clone(),
         first_name: first_name.clone(),
         last_name,
         pass_hash: pass_hash.await.expect("Error hashing password"),
-        email: encrypted_email.await.expect("Error encrypting email"),
+        email: email.clone(),
     };
 
     // Creates DB user
@@ -206,6 +207,7 @@ pub async fn handle_change_password(
     // Retrieve and check if supplied current password matches against store password hash
     let pass_result = db_instance
         .get_pass_hash_for_username(&username)
+        .await
         .map_err(|err| AuthError::InternalServerError(err.to_string()));
 
     let verified_result = verify_hash(&current_password, &pass_result?);
@@ -303,7 +305,7 @@ pub async fn handle_request_password_reset(
 ) -> Result<HttpResponse, AuthError> {
     // Checks if user exists. If it doesn't, stops process but produces no error
     // This is to maintain username security
-    match db_instance.does_user_exist(&username) {
+    match db_instance.does_user_exist(&username).await {
         Ok(username_exists) => {
             if !username_exists {
                 return Ok(HttpResponse::new(StatusCode::OK));
@@ -331,12 +333,13 @@ pub async fn handle_request_password_reset(
 
     let user = db_instance
         .find_user_by_username(&username)
+        .await
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?
         .expect("No user found!");
 
     let name = user.first_name;
 
-    let user_email = decrypt_string(&user.encrypted_email, EncryptionKey::SmtpKey)
+    let user_email = decrypt_string(&user.email, EncryptionKey::SmtpKey)
         .await
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
@@ -390,6 +393,7 @@ pub async fn handle_generate_2fa(
 ) -> Result<(String, String), AuthError> {
     let two_factor_enabled = db_instance
         .user_has_2fa_enabled(&username)
+        .await
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
     if two_factor_enabled {
@@ -432,6 +436,7 @@ pub async fn handle_enable_2fa(
 ) -> Result<(), AuthError> {
     let two_factor_enabled = db_instance
         .user_has_2fa_enabled(&username)
+        .await
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
     if two_factor_enabled {
