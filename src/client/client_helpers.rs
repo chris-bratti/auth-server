@@ -62,8 +62,6 @@ pub async fn user_server_side_redirect(
             redirect_url: url,
         } = handle_request_oauth_token(client_id, username, state, &redis_client).await?;
 
-        println!("Redirecting to: {url}?code={authorization_code}&state={state}");
-
         leptos_actix::redirect(format!("{url}?code={authorization_code}&state={state}").as_str());
     }
     Ok(())
