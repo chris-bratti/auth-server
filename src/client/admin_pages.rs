@@ -176,195 +176,214 @@ pub fn AdminLogin() -> impl IntoView {
 #[component]
 pub fn AdminSignup() -> impl IntoView {
     // Uses the SignUp server function
-    let signup = create_server_action::<AdminSignup>();
+    let signup = create_server_action::<SignupAdmin>();
     // Used to fetch any errors returned from the server
     let signup_value = signup.value();
     // Used for client side password validation
     let (passwords_match, set_passwords_match) = create_signal(true);
 
-    let (user, set_user): (ReadSignal<Option<String>>, WriteSignal<Option<String>>) =
+    let (admin, set_admin): (ReadSignal<Option<String>>, WriteSignal<Option<String>>) =
         create_signal(None);
 
     let pending = signup.pending();
-
-    let qr_code = create_resource(
-        || (),
-        move |_| async move { generate_2fa(user.get().unwrap()).await },
-    );
-
-    let enable_2fa = create_server_action::<AdminEnable2fa>();
-    let loading = qr_code.loading();
-    let value = enable_2fa.value();
 
     view! {
         <div style:font-family="sans-serif" style:text-align="center">
             // Form for user sign up, does some client side field validation
             <div class="container">
-                {move || {
-                    if pending() {
+                {move|| {
+                    if admin.get().is_some(){
                         view! {
-                            <h1>Creating account...</h1>
-                            <p>"We're excited for you to get started :)"</p>
+                            <div class="container">
+                                <AdminEnableTwoFactor admin=admin/>
+                            </div>
                         }
                             .into_view()
-                    } else {
-                        if user.get().is_some(){
-                            let (encoded, token) = qr_code.get().unwrap().unwrap();
-                            view! {
-                                <ActionForm class="login-form" action=enable_2fa>
-                                    <img src=format!("data:image/png;base64,{}", encoded) alt="QR Code"/>
-                                    <input
-                                        class="form-control"
-                                        type="hidden"
-                                        name="username"
-                                        value=user.get()
-                                    />
-                                    <input
-                                        class="form-control"
-                                        type="hidden"
-                                        name="two_factor_token"
-                                        value=token
-                                    />
-                                    <div class="mb-3">
-                                        <label class="form-label">
-                                            <input
-                                                class="form-control"
-                                                type="text"
-                                                name="otp"
-                                                maxLength=6
-                                                placeholder="OTP From Authenticator"
-                                            />
-                                        </label>
-                                    </div>
-                                    <input class="btn btn-primary" type="submit" value="Enable Two Factor"/>
-                                </ActionForm>
-                                {move || {
-                                    if signup_value().is_some() {
-                                        match signup_value().unwrap(){
-                                            Ok(uname) => {
-                                                set_user(Some(uname));
-                                                view! {}.into_view()
-                                            },
-                                            Err(err) => {
-                                                view! {
-                                                    <p>{err.to_string()}</p>
-                                                }.into_view()
-                                            }
-                                        }
-                                    }else{
-                                        view! {}.into_view()
+                    }else{
+                        view! {
+                            {move || {
+                                if pending() {
+                                    view! {
+                                        <h1>Creating account...</h1>
+                                        <p>"We're excited for you to get started :)"</p>
                                     }
-                                }}
-                            }
-                                .into_view()
-                        }else{
-                            view! {
-                                <h1>"Sign Up"</h1>
-                                <ActionForm
-                                    class="login-form"
-                                    on:submit=move |ev| {
-                                        let data = Signup::from_event(&ev);
-                                        if data.is_err() {
-                                            ev.prevent_default();
-                                        } else {
-                                            let data_values = data.unwrap();
-                                            if data_values.password != data_values.confirm_password {
-                                                set_passwords_match(false);
-                                                ev.prevent_default();
-                                            }
-                                        }
-                                    }
-
-                                    action=signup
-                                >
-                                    <div class="mb-3">
-                                    <label class="form-label">
-                                        <input
-                                            class="form-control"
-                                            type="password"
-                                            name="admin_key"
-                                            required=true
-                                            placeholder="Admin Key"
-                                        />
-                                        </label>
-                                    </div>
-                                    <div class="mb-3">
-                                        <label class="form-label">
-                                            <input
-                                                class="form-control"
-                                                type="text"
-                                                name="username"
-                                                required=true
-                                                minLength=5
-                                                maxLength=16
-                                                placeholder="Username"
-                                            />
-                                        </label>
-                                    </div>
-                                    <div class="mb-3">
-                                        <label class="form-label">
-                                            <input
-                                                class="form-control"
-                                                type="password"
-                                                name="password"
-                                                required=true
-                                                minLength=8
-                                                maxLength=24
-                                                pattern=PASSWORD_PATTERN
-                                                placeholder="Password"
-                                            />
-                                        </label>
-                                    </div>
-                                    <div class="mb-3">
-                                        <label class="form-label">
-                                            <input
-                                                class="form-control"
-                                                type="password"
-                                                name="confirm_password"
-                                                required=true
-                                                minLength=8
-                                                maxLength=24
-                                                pattern=PASSWORD_PATTERN
-                                                placeholder="Confirm Password"
-                                            />
-                                        </label>
-                                        {move || {
-                                            if !passwords_match.get() {
-                                                view! { <p>Passwords do not match</p> }.into_view()
-                                            } else {
-                                                view! {}.into_view()
-                                            }
-                                        }}
-
-                                        {move || {
-                                            match signup_value.get() {
-                                                Some(response) => {
-                                                    match response {
-                                                        Ok(_) => view! {}.into_view(),
-                                                        Err(server_err) => {
-                                                            view! {
-                                                                // Displays any errors returned from the server
-                                                                <p>{format!("{}", server_err.to_string())}</p>
-                                                            }
-                                                                .into_view()
-                                                        }
+                                        .into_view()
+                                } else {
+                                    view! {
+                                        <h1>"Register Admin"</h1>
+                                        <ActionForm
+                                            class="login-form"
+                                            on:submit=move |ev| {
+                                                let data = SignupAdmin::from_event(&ev);
+                                                if data.is_err() {
+                                                    ev.prevent_default();
+                                                    leptos::logging::log!("Invalid data: {:?}", data.err());
+                                                } else {
+                                                    let data_values = data.unwrap();
+                                                    if data_values.password != data_values.confirm_password {
+                                                        set_passwords_match(false);
+                                                        ev.prevent_default();
+                                                        leptos::logging::log!("Passwords do not match");
+                                                    } else {
+                                                        leptos::logging::log!("Submitting data: {:?}", data_values);
                                                     }
                                                 }
-                                                None => view! {}.into_view(),
                                             }
-                                        }}
 
-                                    </div>
-                                    <input class="btn btn-primary" type="submit" value="Sign Up"/>
-                                </ActionForm>
-                            }
-                                .into_view()
-                    }
+                                            action=signup
+                                        >
+                                            <div class="mb-3">
+                                                <label class="form-label">
+
+                                                    <input
+                                                        class="form-control"
+                                                        type="password"
+                                                        name="admin_key"
+                                                        required=true
+                                                        placeholder="Admin Key"
+                                                    />
+                                                </label>
+                                            </div>
+                                            <div class="mb-3">
+                                                <label class="form-label">
+                                                    <input
+                                                        class="form-control"
+                                                        type="text"
+                                                        name="username"
+                                                        required=true
+                                                        minLength=5
+                                                        maxLength=16
+                                                        placeholder="Username"
+                                                    />
+                                                </label>
+                                            </div>
+                                            <div class="mb-3">
+                                                <label class="form-label">
+                                                    <input
+                                                        class="form-control"
+                                                        type="password"
+                                                        name="password"
+                                                        required=true
+                                                        minLength=8
+                                                        maxLength=16
+                                                        pattern=PASSWORD_PATTERN
+                                                        placeholder="Password"
+                                                    />
+                                                </label>
+                                            </div>
+                                            <div class="mb-3">
+                                                <label class="form-label">
+                                                    <input
+                                                        class="form-control"
+                                                        type="password"
+                                                        name="confirm_password"
+                                                        required=true
+                                                        minLength=8
+                                                        maxLength=16
+                                                        pattern=PASSWORD_PATTERN
+                                                        placeholder="Confirm Password"
+                                                    />
+                                                </label>
+                                                {move || {
+                                                    if !passwords_match.get() {
+                                                        view! { <p>"Passwords do not match!"</p> }.into_view()
+                                                    } else {
+                                                        view! {}.into_view()
+                                                    }
+                                                }}
+
+                                                {move || {
+                                                    match signup_value.get() {
+                                                        Some(response) => {
+                                                            match response {
+                                                                Ok(admin_username) => {
+                                                                    set_admin(Some(admin_username));
+                                                                    view! {}.into_view()
+                                                                },
+                                                                Err(server_err) => {
+                                                                    view! {
+                                                                        // Displays any errors returned from the server
+                                                                        <p>{format!("{}", server_err.to_string())}</p>
+                                                                    }
+                                                                        .into_view()
+                                                                }
+                                                            }
+                                                        }
+                                                        None => view! {}.into_view(),
+                                                    }
+                                                }}
+
+                                            </div>
+                                            <input class="btn btn-primary" type="submit" value="Sign Up"/>
+                                        </ActionForm>
+                                    }
+                                        .into_view()
+                                }
+                            }}
+                        }.into_view()
                     }
                 }}
 
             </div>
 
         </div>
+    }
+}
+
+#[component]
+pub fn AdminEnableTwoFactor(admin: ReadSignal<Option<String>>) -> impl IntoView {
+    let qr_code = create_resource(
+        || (),
+        move |_| async move { admin_generate_2fa(admin.get().unwrap()).await },
+    );
+
+    let enable_2fa = create_server_action::<AdminEnable2fa>();
+    let loading = qr_code.loading();
+    let value = enable_2fa.value();
+    view! {
+        {move || {
+            if loading() {
+                view! { <h1>"Loading..."</h1> }.into_view()
+            } else {
+                let (encoded, token) = qr_code.get().unwrap().unwrap();
+                view! {
+                    <ActionForm class="login-form" action=enable_2fa>
+                        <img src=format!("data:image/png;base64,{}", encoded) alt="QR Code"/>
+                        <input
+                            class="form-control"
+                            type="hidden"
+                            name="username"
+                            value=admin.get()
+                        />
+                        <input
+                            class="form-control"
+                            type="hidden"
+                            name="two_factor_token"
+                            value=token
+                        />
+                        <div class="mb-3">
+                            <label class="form-label">
+                                <input
+                                    class="form-control"
+                                    type="text"
+                                    name="otp"
+                                    maxLength=6
+                                    placeholder="OTP From Authenticator"
+                                />
+                            </label>
+                        </div>
+                        <input class="btn btn-primary" type="submit" value="Enable Two Factor"/>
+                    </ActionForm>
+                    {move || {
+                        if value().is_some() && value().unwrap().is_err() {
+                            view! {<p>{value().unwrap().unwrap()}</p>}.into_view()
+                        }else{
+                            view! {}.into_view()
+                        }
+                    }}
+                }
+                    .into_view()
+            }
+        }}
     }
 }

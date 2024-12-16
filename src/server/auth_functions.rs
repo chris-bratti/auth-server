@@ -46,7 +46,6 @@ pub fn get_env_variable(variable: &str) -> Option<String> {
 
 pub fn get_totp_config(username: &String, token: &String) -> TOTP {
     let app_name = get_env_variable("APP_NAME").expect("APP_NAME is unset!");
-    println!("Getting totp config");
     TOTP::new(
         Algorithm::SHA1,
         6,
@@ -70,7 +69,6 @@ pub async fn get_totp(username: &String, two_factor_token: &String) -> Result<St
     let decrypted_token = decrypt_string(&two_factor_token, EncryptionKey::TwoFactorKey)
         .await
         .expect("Error decrypting string!");
-    println!("In the get_totp thing {}", two_factor_token);
     get_totp_config(&username, &decrypted_token)
         .generate_current()
         .map_err(|err| AuthError::InternalServerError(err.to_string()))

@@ -24,6 +24,7 @@ cfg_if! {
         use crate::client::client_helpers;
         use crate::get_env_variable;
         use crate::server::admin_handlers::handle_signup_admin;
+        use crate::DatabaseUser;
     }
 }
 
@@ -68,13 +69,14 @@ pub async fn admin_login(
     Ok(username)
 }
 
-#[server(AdminSignup, "/api")]
-pub async fn admin_signup(
+#[server(SignupAdmin, "/api")]
+pub async fn signup_admin(
     username: String,
     password: String,
     confirm_password: String,
     admin_key: String,
 ) -> Result<String, ServerFnError<AuthError>> {
+    println!("Registering admin");
     if admin_key != get_env_variable("ADMIN_KEY").unwrap() {
         return Err(AuthError::InvalidCredentials.to_server_fn_error());
     }
@@ -126,6 +128,8 @@ pub async fn admin_enable_2fa(
     handle_enable_2fa(username, admin, otp, two_factor_token, db_instance).await?;
 
     req.get_session().remove("2fa");
+
+    leptos_actix::redirect("/test");
 
     Ok(true)
 }
@@ -331,6 +335,13 @@ pub async fn generate_2fa(username: String) -> Result<(String, String), ServerFn
         .map_err(|err| AuthError::from(err))?
         .ok_or_else(|| AuthError::InvalidCredentials)?;
 
+    if db_user.two_factor {
+        return Err(
+            AuthError::Error("Two Factor already enabled for user!".to_string())
+                .to_server_fn_error(),
+        );
+    }
+
     let (qr_code, token) = handle_generate_2fa(username, db_user, db_instance, req).await?;
 
     Ok((qr_code, token))
@@ -352,6 +363,13 @@ pub async fn enable_2fa(username: String, otp: String) -> Result<bool, ServerFnE
         .await
         .map_err(|err| AuthError::from(err))?
         .ok_or_else(|| AuthError::InvalidCredentials)?;
+
+    if db_user.two_factor {
+        return Err(
+            AuthError::Error("Two Factor already enabled for user!".to_string())
+                .to_server_fn_error(),
+        );
+    }
 
     handle_enable_2fa(username, db_user, otp, two_factor_token, db_instance).await?;
 

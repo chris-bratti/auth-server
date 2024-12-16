@@ -369,12 +369,6 @@ pub async fn handle_generate_2fa<T>(
 where
     T: DatabaseUser,
 {
-    if user.two_factor() {
-        return Err(AuthError::Error(
-            "Two Factor already enabled for user!".to_string(),
-        ));
-    }
-
     let (qr_code, token) = create_2fa_for_user(&username)
         .await
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
@@ -403,13 +397,6 @@ pub async fn handle_enable_2fa<T>(
 where
     T: DatabaseUser,
 {
-    println!("Trying to enable 2fa");
-    if user.two_factor() {
-        return Err(AuthError::Error(
-            "Two Factor already enabled for user!".to_string(),
-        ));
-    }
-
     validate_pending_token(
         &username,
         enable_2fa_token,

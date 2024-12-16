@@ -20,6 +20,8 @@ pub async fn handle_signup_admin(
         return Err(AuthError::InvalidPassword);
     }
 
+    println!("Valid passowrd");
+
     // Usernames should case insensitive
     let username: String = username.trim().to_lowercase();
 
@@ -31,6 +33,8 @@ pub async fn handle_signup_admin(
     );
 
     db_instance.create_admin(&username, &password).await?;
+
+    println!("Created admin");
 
     Ok(())
 }
