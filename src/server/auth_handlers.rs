@@ -432,7 +432,6 @@ pub async fn handle_verify_otp<T>(
 where
     T: DatabaseUser,
 {
-    println!("Verifying OTP for {}", username);
     let otp = otp.trim().to_string();
 
     validate_pending_token(

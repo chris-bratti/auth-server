@@ -2,6 +2,7 @@
 use crate::{
     client::client_helpers::{admin_exists, admin_logged_in},
     controllers::*,
+    AuthError,
 };
 use leptos::*;
 use leptos_router::*;
@@ -12,12 +13,12 @@ static PASSWORD_PATTERN: &str =
 #[component]
 pub fn AdminPage() -> impl IntoView {
     let admin_result = create_blocking_resource(|| (), |_| async move { admin_exists().await });
-    let admin_exists = move || admin_result.get().is_some() && admin_result.get().unwrap().unwrap();
+    let admin_exists = move || admin_result.get().is_some() && admin_result.get().unwrap().is_ok();
+
     let admin_session_result =
         create_blocking_resource(|| (), |_| async move { admin_logged_in().await });
-    let admin_logged_in = move || {
-        admin_session_result.get().is_some() && admin_session_result.get().unwrap().unwrap()
-    };
+    let admin_logged_in =
+        move || admin_session_result.get().is_some() && admin_session_result.get().unwrap().is_ok();
 
     view! {
        <Suspense fallback=|| {
@@ -25,13 +26,17 @@ pub fn AdminPage() -> impl IntoView {
        }>
            {move ||{
                 if admin_exists() {
-                    if admin_logged_in(){
-                        view! {<AdminLogin/>}
-                    }else{
-                        view! {<AdminHomepage/>}
-                    }
+                    view! {
+                        {move || {
+                            if !admin_logged_in(){
+                                view! {<AdminLogin admin_session_result=admin_session_result/>}
+                            }else{
+                                view! {<AdminHomepage/>}
+                            }
+                        }}
+                    }.into_view()
                 }else{
-                    view! {<AdminSignup/>}
+                    view! {<AdminSignup/>}.into_view()
                 }
             }
            }
@@ -47,7 +52,9 @@ pub fn AdminHomepage() -> impl IntoView {
 }
 
 #[component]
-pub fn AdminLogin() -> impl IntoView {
+pub fn AdminLogin(
+    admin_session_result: Resource<(), Result<bool, ServerFnError<AuthError>>>,
+) -> impl IntoView {
     // Uses Login server function
     let login = create_server_action::<AdminLogin>();
     // Used to fetch any errors returned from the Login function
@@ -90,7 +97,10 @@ pub fn AdminLogin() -> impl IntoView {
                                 match _verify_otp_value.get() {
                                     Some(response) => {
                                         match response{
-                                            Ok(_) => view! {}.into_view(),
+                                            Ok(_) => {
+                                                admin_session_result.refetch();
+                                                view! {}.into_view()
+                                            },
                                             Err(err) => view! { <p>{format!("{}", err)}</p> }.into_view()
                                         }
                                     }
@@ -101,7 +111,7 @@ pub fn AdminLogin() -> impl IntoView {
                             .into_view()
                     } else if username.get().is_none() {
                         view! {
-                            <h1>"Welcome to Leptos!"</h1>
+                            <h1>"Admin Login"</h1>
                             <ActionForm class="login-form" action=login>
                                 <div class="mb-3">
                                     <label class="form-label">
@@ -120,6 +130,16 @@ pub fn AdminLogin() -> impl IntoView {
                                             type="password"
                                             name="password"
                                             placeholder="Password"
+                                        />
+                                    </label>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">
+                                        <input
+                                            class="form-control"
+                                            type="password"
+                                            name="admin_key"
+                                            placeholder="Admin Key"
                                         />
                                     </label>
                                 </div>
@@ -217,15 +237,11 @@ pub fn AdminSignup() -> impl IntoView {
                                                 let data = SignupAdmin::from_event(&ev);
                                                 if data.is_err() {
                                                     ev.prevent_default();
-                                                    leptos::logging::log!("Invalid data: {:?}", data.err());
                                                 } else {
                                                     let data_values = data.unwrap();
                                                     if data_values.password != data_values.confirm_password {
                                                         set_passwords_match(false);
                                                         ev.prevent_default();
-                                                        leptos::logging::log!("Passwords do not match");
-                                                    } else {
-                                                        leptos::logging::log!("Submitting data: {:?}", data_values);
                                                     }
                                                 }
                                             }

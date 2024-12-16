@@ -24,7 +24,6 @@ cfg_if! {
         use crate::client::client_helpers;
         use crate::get_env_variable;
         use crate::server::admin_handlers::handle_signup_admin;
-        use crate::DatabaseUser;
     }
 }
 
@@ -42,7 +41,11 @@ pub async fn logout() -> Result<(), ServerFnError<AuthError>> {
 pub async fn admin_login(
     username: String,
     password: String,
+    admin_key: String,
 ) -> Result<String, ServerFnError<AuthError>> {
+    if admin_key != get_env_variable("ADMIN_KEY").unwrap() {
+        return Err(AuthError::InvalidCredentials.to_server_fn_error());
+    }
     let db_instance: web::Data<DbInstance> = extract().await.map_err(|_| {
         AuthError::InternalServerError("Unable to find session data".to_string())
             .to_server_fn_error()
