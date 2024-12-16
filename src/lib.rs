@@ -1,3 +1,4 @@
+#![allow(async_fn_in_trait)]
 use core::{fmt, str::FromStr};
 use leptos_router::*;
 use serde::{Deserialize, Serialize};
@@ -13,6 +14,10 @@ cfg_if! {
     use redis::RedisError;
     use server::auth_functions::*;
     use db::models::DBUser;
+    use db::models::AppAdmin;
+    use db::db_helper::DbInstance;
+    use actix_web::web;
+    use std::time::SystemTime;
     }
 }
 pub mod client;
@@ -35,6 +40,122 @@ pub fn hydrate() {
     console_error_panic_hook::set_once();
 
     mount_to_body(App);
+}
+
+#[cfg(feature = "ssr")]
+pub trait DatabaseUser {
+    fn is_locked(&self) -> bool;
+    fn last_failed_attempt(&self) -> Option<SystemTime>;
+    fn pass_hash(&self) -> &String;
+    fn two_factor_token(&self) -> Option<&String>;
+    fn two_factor(&self) -> bool;
+    fn verified(&self) -> bool;
+    fn increment_password_tries(
+        &self,
+        db_instance: &web::Data<DbInstance>,
+    ) -> Result<bool, DBError>;
+    fn enable_2fa(&self, db_instance: &web::Data<DbInstance>) -> Result<(), DBError>;
+    async fn save_2fa_token(
+        &self,
+        two_factor_token: &String,
+        db_instance: &web::Data<DbInstance>,
+    ) -> Result<(), DBError>;
+}
+
+#[cfg(feature = "ssr")]
+impl DatabaseUser for DBUser {
+    fn is_locked(&self) -> bool {
+        self.locked
+    }
+
+    fn last_failed_attempt(&self) -> Option<SystemTime> {
+        self.last_failed_attempt
+    }
+
+    fn pass_hash(&self) -> &String {
+        &self.pass_hash
+    }
+
+    fn two_factor(&self) -> bool {
+        self.two_factor
+    }
+
+    fn verified(&self) -> bool {
+        self.verified
+    }
+
+    fn increment_password_tries(
+        &self,
+        db_instance: &web::Data<DbInstance>,
+    ) -> Result<bool, DBError> {
+        db_instance.increment_db_password_tries(&self.username)
+    }
+
+    fn two_factor_token(&self) -> Option<&String> {
+        self.two_factor_token.as_ref()
+    }
+
+    fn enable_2fa(&self, db_instance: &web::Data<DbInstance>) -> Result<(), DBError> {
+        db_instance.enable_2fa_for_db_user(&self.username)
+    }
+
+    async fn save_2fa_token(
+        &self,
+        two_factor_token: &String,
+        db_instance: &web::Data<DbInstance>,
+    ) -> Result<(), DBError> {
+        db_instance
+            .set_2fa_token_for_db_user(&self.username, two_factor_token)
+            .await
+    }
+}
+
+#[cfg(feature = "ssr")]
+impl DatabaseUser for AppAdmin {
+    fn is_locked(&self) -> bool {
+        self.locked
+    }
+
+    fn last_failed_attempt(&self) -> Option<SystemTime> {
+        self.last_failed_attempt
+    }
+
+    fn pass_hash(&self) -> &String {
+        &self.pass_hash
+    }
+
+    fn two_factor(&self) -> bool {
+        true
+    }
+
+    fn verified(&self) -> bool {
+        self.initialized
+    }
+
+    fn increment_password_tries(
+        &self,
+        db_instance: &web::Data<DbInstance>,
+    ) -> Result<bool, DBError> {
+        db_instance.increment_admin_password_retries(&self.username)
+    }
+
+    fn two_factor_token(&self) -> Option<&String> {
+        self.two_factor_token.as_ref()
+    }
+
+    fn enable_2fa(&self, _: &web::Data<DbInstance>) -> Result<(), DBError> {
+        Ok(())
+    }
+
+    async fn save_2fa_token(
+        &self,
+        two_factor_token: &String,
+        db_instance: &web::Data<DbInstance>,
+    ) -> Result<(), DBError> {
+        db_instance
+            .initialize_admin(&self.username, two_factor_token)
+            .await
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]

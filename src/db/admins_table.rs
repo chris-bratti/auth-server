@@ -1,4 +1,4 @@
-use crate::{hash_string, DBError};
+use crate::{encrypt_string, hash_string, DBError};
 
 use super::{
     db_helper::DbInstance,
@@ -33,14 +33,18 @@ impl DbInstance {
     pub async fn initialize_admin(&self, uname: &String, tf_token: &String) -> Result<(), DBError> {
         let mut connection = self.db_connection.connect()?;
 
+        let encrypted_token = encrypt_string(tf_token, crate::EncryptionKey::TwoFactorKey)
+            .await
+            .unwrap();
+
         diesel::update(admins.filter(username.eq(uname)))
-            .set((two_factor_token.eq(tf_token), initialized.eq(true)))
+            .set((two_factor_token.eq(encrypted_token), initialized.eq(true)))
             .execute(&mut connection)?;
 
         Ok(())
     }
 
-    pub async fn increment_admin_password_retries(&self, uname: &String) -> Result<bool, DBError> {
+    pub fn increment_admin_password_retries(&self, uname: &String) -> Result<bool, DBError> {
         let mut connection = self.db_connection.connect()?;
         let current_time =
             select(diesel::dsl::now).get_result::<std::time::SystemTime>(&mut connection)?;
@@ -92,5 +96,25 @@ impl DbInstance {
             .execute(&mut connection)?;
 
         Ok(())
+    }
+
+    pub fn get_admin_from_username(&self, uname: &String) -> Result<Option<AppAdmin>, DBError> {
+        let mut connection = self.db_connection.connect()?;
+
+        admins
+            .filter(username.eq(uname))
+            .limit(1)
+            .select(AppAdmin::as_select())
+            .first(&mut connection)
+            .optional()
+            .map_err(DBError::from)
+    }
+
+    pub fn admin_exists(&self) -> Result<bool, DBError> {
+        let mut connection = self.db_connection.connect()?;
+
+        let num_admins: i64 = admins.count().get_result(&mut connection)?;
+
+        Ok(num_admins > 0)
     }
 }

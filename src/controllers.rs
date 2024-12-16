@@ -22,6 +22,8 @@ cfg_if! {
         use actix_identity::Identity;
         use crate::client::client_helpers::get_request_data;
         use crate::client::client_helpers;
+        use crate::get_env_variable;
+        use crate::server::admin_handlers::handle_signup_admin;
     }
 }
 
@@ -32,6 +34,127 @@ pub async fn logout() -> Result<(), ServerFnError<AuthError>> {
     })?;
     Identity::logout(identity.expect("No user found in session!"));
     leptos_actix::redirect("/");
+    Ok(())
+}
+
+#[server(AdminLogin, "/api")]
+pub async fn admin_login(
+    username: String,
+    password: String,
+) -> Result<String, ServerFnError<AuthError>> {
+    let db_instance: web::Data<DbInstance> = extract().await.map_err(|_| {
+        AuthError::InternalServerError("Unable to find session data".to_string())
+            .to_server_fn_error()
+    })?;
+    // Get current context
+    let Some(req) = use_context::<actix_web::HttpRequest>() else {
+        return Err(ServerFnError::WrappedServerError(
+            AuthError::InternalServerError("No HttpRequest found in current context".to_string()),
+        ));
+    };
+
+    // Case insensitive usernames
+    let username: String = username.trim().to_lowercase();
+
+    let user = db_instance
+        .get_admin_from_username(&username)
+        .map_err(|err| AuthError::from(err))?
+        .ok_or_else(|| AuthError::InvalidCredentials)?;
+
+    let _ = handle_login(&username, password, user, req, db_instance)
+        .await
+        .map_err(|err| err.to_server_fn_error())?;
+
+    Ok(username)
+}
+
+#[server(AdminSignup, "/api")]
+pub async fn admin_signup(
+    username: String,
+    password: String,
+    confirm_password: String,
+    admin_key: String,
+) -> Result<String, ServerFnError<AuthError>> {
+    if admin_key != get_env_variable("ADMIN_KEY").unwrap() {
+        return Err(AuthError::InvalidCredentials.to_server_fn_error());
+    }
+    let db_instance: web::Data<DbInstance> = extract().await.map_err(|_| {
+        AuthError::InternalServerError("Unable to find session data".to_string())
+            .to_server_fn_error()
+    })?;
+
+    handle_signup_admin(&username, password, confirm_password, db_instance).await?;
+
+    Ok(username)
+}
+
+#[server(AdminGenerate2fa, "/api")]
+pub async fn admin_generate_2fa(
+    username: String,
+) -> Result<(String, String), ServerFnError<AuthError>> {
+    let (req, db_instance) = get_request_data().await?;
+
+    let admin = db_instance
+        .get_admin_from_username(&username)
+        .map_err(|err| AuthError::from(err))?
+        .ok_or_else(|| AuthError::InvalidCredentials)?;
+
+    let (qr_code, token) = handle_generate_2fa(username, admin, db_instance, req).await?;
+
+    Ok((qr_code, token))
+}
+
+#[server(AdminEnable2fa, "/api")]
+pub async fn admin_enable_2fa(
+    username: String,
+    otp: String,
+) -> Result<bool, ServerFnError<AuthError>> {
+    let (req, db_instance) = get_request_data().await?;
+
+    // Extract login_token from user session
+    let two_factor_token: String = req
+        .get_session()
+        .get("2fa")
+        .map_err(|_| AuthError::InternalServerError("Error getting session!".to_string()))?
+        .ok_or_else(|| AuthError::InvalidCredentials)?;
+
+    let admin = db_instance
+        .get_admin_from_username(&username)
+        .map_err(|err| AuthError::from(err))?
+        .ok_or_else(|| AuthError::InvalidCredentials)?;
+
+    handle_enable_2fa(username, admin, otp, two_factor_token, db_instance).await?;
+
+    req.get_session().remove("2fa");
+
+    Ok(true)
+}
+
+#[server(VerifyAdminOtp, "/api")]
+pub async fn verify_admin_otp(
+    username: String,
+    otp: String,
+) -> Result<(), ServerFnError<AuthError>> {
+    let (req, db_instance) = get_request_data().await?;
+
+    // Extract login_token from user session
+    let login_token: String = req
+        .get_session()
+        .get("otp")
+        .map_err(|_| AuthError::InternalServerError("Error getting session!".to_string()))?
+        .ok_or_else(|| AuthError::InvalidCredentials)?;
+
+    let admin = db_instance
+        .get_admin_from_username(&username)
+        .map_err(|err| AuthError::from(err))?
+        .ok_or_else(|| AuthError::InvalidCredentials)?;
+
+    handle_verify_otp(&username, otp, admin, login_token, &req, db_instance)
+        .await
+        .map_err(|err| err.to_server_fn_error())?;
+
+    req.get_session().remove("otp");
+
     Ok(())
 }
 
@@ -53,7 +176,16 @@ pub async fn login(
         ));
     };
 
-    let two_factor_enabled = handle_login(&username, password, req, db_instance)
+    // Case insensitive usernames
+    let username: String = username.trim().to_lowercase();
+
+    let user = db_instance
+        .get_user_from_username(&username)
+        .await
+        .map_err(|err| AuthError::from(err))?
+        .ok_or_else(|| AuthError::InvalidCredentials)?;
+
+    let two_factor_enabled = handle_login(&username, password, user, req, db_instance)
         .await
         .map_err(|err| err.to_server_fn_error())?;
 
@@ -125,7 +257,13 @@ async fn verify_otp(
         .map_err(|_| AuthError::InternalServerError("Error getting session!".to_string()))?
         .ok_or_else(|| AuthError::InvalidCredentials)?;
 
-    handle_verify_otp(&username, otp, login_token, &req, db_instance)
+    let db_user = db_instance
+        .get_user_from_username(&username)
+        .await
+        .map_err(|err| AuthError::from(err))?
+        .ok_or_else(|| AuthError::InvalidCredentials)?;
+
+    handle_verify_otp(&username, otp, db_user, login_token, &req, db_instance)
         .await
         .map_err(|err| err.to_server_fn_error())?;
 
@@ -187,7 +325,13 @@ pub async fn verify_user(
 pub async fn generate_2fa(username: String) -> Result<(String, String), ServerFnError<AuthError>> {
     let (req, db_instance) = get_request_data().await?;
 
-    let (qr_code, token) = handle_generate_2fa(username, db_instance, req).await?;
+    let db_user = db_instance
+        .get_user_from_username(&username)
+        .await
+        .map_err(|err| AuthError::from(err))?
+        .ok_or_else(|| AuthError::InvalidCredentials)?;
+
+    let (qr_code, token) = handle_generate_2fa(username, db_user, db_instance, req).await?;
 
     Ok((qr_code, token))
 }
@@ -203,7 +347,13 @@ pub async fn enable_2fa(username: String, otp: String) -> Result<bool, ServerFnE
         .map_err(|_| AuthError::InternalServerError("Error getting session!".to_string()))?
         .ok_or_else(|| AuthError::InvalidCredentials)?;
 
-    handle_enable_2fa(username, otp, two_factor_token, db_instance).await?;
+    let db_user = db_instance
+        .get_user_from_username(&username)
+        .await
+        .map_err(|err| AuthError::from(err))?
+        .ok_or_else(|| AuthError::InvalidCredentials)?;
+
+    handle_enable_2fa(username, db_user, otp, two_factor_token, db_instance).await?;
 
     req.get_session().remove("2fa");
 

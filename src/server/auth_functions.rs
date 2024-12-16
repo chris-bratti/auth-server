@@ -1,6 +1,7 @@
 use core::{option::Option::None, result::Result::Ok};
 use std::{collections::HashMap, env};
 
+use chrono::{DateTime, Utc};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 
 use actix_web::{web, Result};
@@ -17,7 +18,7 @@ use argon2::{
 use dotenvy::dotenv;
 use redis::{Client, Commands};
 
-use crate::{db::db_helper::DbInstance, Claims};
+use crate::{db::db_helper::DbInstance, Claims, DBError, DatabaseUser};
 use crate::{AuthError, EncryptionKey, OauthClaims};
 use totp_rs::{Algorithm, Secret, TOTP};
 
@@ -45,6 +46,7 @@ pub fn get_env_variable(variable: &str) -> Option<String> {
 
 pub fn get_totp_config(username: &String, token: &String) -> TOTP {
     let app_name = get_env_variable("APP_NAME").expect("APP_NAME is unset!");
+    println!("Getting totp config");
     TOTP::new(
         Algorithm::SHA1,
         6,
@@ -64,22 +66,14 @@ pub async fn create_2fa_for_user(username: &String) -> Result<(String, String), 
     Ok((qr_code, token))
 }
 
-pub async fn get_totp(username: &String, db: &web::Data<DbInstance>) -> Result<String, AuthError> {
-    let token = db
-        .get_user_2fa_token(&username)
+pub async fn get_totp(username: &String, two_factor_token: &String) -> Result<String, AuthError> {
+    let decrypted_token = decrypt_string(&two_factor_token, EncryptionKey::TwoFactorKey)
         .await
-        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
-    match token {
-        Some(token) => {
-            let decrypted_token = decrypt_string(&token, EncryptionKey::TwoFactorKey)
-                .await
-                .expect("Error decrypting string!");
-            get_totp_config(&username, &decrypted_token)
-                .generate_current()
-                .map_err(|err| AuthError::InternalServerError(err.to_string()))
-        }
-        None => Err(AuthError::TOTPError),
-    }
+        .expect("Error decrypting string!");
+    println!("In the get_totp thing {}", two_factor_token);
+    get_totp_config(&username, &decrypted_token)
+        .generate_current()
+        .map_err(|err| AuthError::InternalServerError(err.to_string()))
 }
 
 /// Hash password with Argon2
@@ -294,7 +288,11 @@ pub async fn validate_pending_token(
         return Err(AuthError::InvalidCredentials);
     }
 
-    let user_exists = db.does_user_exist(&token.sub).await?;
+    let user_exists = if db.does_user_exist(&token.sub).await? {
+        true
+    } else {
+        db.does_admin_exist(&token.sub).await?
+    };
 
     if token.scope == scope && user_exists {
         Ok(())
@@ -315,6 +313,28 @@ pub async fn load_oauth_clients(
         .collect();
 
     Ok(clients)
+}
+
+pub async fn is_user_locked<T>(db_user: &T) -> Result<bool, DBError>
+where
+    T: DatabaseUser,
+{
+    if db_user.is_locked() {
+        let timestamp: DateTime<Utc> =
+            DateTime::from(db_user.last_failed_attempt().expect("No timestamp!"));
+
+        // Get the current time
+        let current_time = Utc::now();
+
+        // Calculate the difference in minutes
+        let minutes_since_last_attempt =
+            current_time.signed_duration_since(timestamp).num_minutes();
+
+        if minutes_since_last_attempt > 10 {
+            return Ok(false);
+        }
+    }
+    Ok(db_user.is_locked())
 }
 
 #[cfg(test)]

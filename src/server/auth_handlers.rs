@@ -1,4 +1,5 @@
 use core::{convert::Into, result::Result::Ok};
+use std::sync::Arc;
 
 use actix_identity::Identity;
 use actix_session::SessionExt;
@@ -9,48 +10,38 @@ use tokio::task;
 
 use crate::server::smtp::{generate_welcome_email_body, send_email};
 use crate::{db::db_helper::*, server::auth_functions::*, AuthError, EncryptionKey};
-use crate::{AuthResponse, UserInfo};
+use crate::{AuthResponse, DatabaseUser, UserInfo};
 
 use super::smtp::generate_reset_email_body;
 
 /// Server function to log in user
-pub async fn handle_login(
+pub async fn handle_login<T>(
     username: &String,
     password: String,
+    user: T,
     request: HttpRequest,
     db_instance: web::Data<DbInstance>,
-) -> Result<bool, AuthError> {
+) -> Result<bool, AuthError>
+where
+    T: DatabaseUser,
+{
     let encrypted_username: String = encrypt_string(&username, EncryptionKey::LoggerKey)
         .await
         .expect("Error encrypting username");
 
     println!("Logging in user: {}", encrypted_username);
 
-    // Case insensitive usernames
-    let username: String = username.trim().to_lowercase();
-
-    if db_instance
-        .is_user_locked(&username)
-        .await
-        .map_err(|_| AuthError::InvalidCredentials)?
-    {
-        println!("User is locked");
+    if is_user_locked(&user).await? {
         return Err(AuthError::AccountLocked);
     }
 
-    // Retrieve pass hash from DB
-    let pass_result = db_instance
-        .get_pass_hash_for_username(&username)
-        .await
-        .map_err(|_| AuthError::InvalidCredentials);
-
     // Verify password hash with Argon2
-    let verified_result = verify_hash(&password, &pass_result?);
+    let verified_result = verify_hash(&password, user.pass_hash());
 
     if verified_result.is_err() || !verified_result.unwrap() {
         println!("Failed login attempt for {}", &encrypted_username);
-        let user_not_locked = db_instance
-            .increment_db_password_tries(&username)
+        let user_not_locked = user
+            .increment_password_tries(&db_instance)
             .expect("Error marking login attempt as failed");
 
         if !user_not_locked {
@@ -59,14 +50,7 @@ pub async fn handle_login(
         return Err(AuthError::InvalidCredentials);
     }
 
-    let two_factor = db_instance
-        .user_has_2fa_enabled(&username)
-        .await
-        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
-
-    println!("User OTP: {}", two_factor);
-
-    if two_factor {
+    if user.two_factor() {
         println!("Creating pending token");
         let pending_token = generate_jwt_token(&username, "verify_otp".to_string(), 600)
             .await
@@ -82,29 +66,6 @@ pub async fn handle_login(
         Ok(false)
     }
 }
-
-/*
-/// Retrieves the User information based on username in current session
-#[get("/user")]
-pub async fn get_user_from_session(
-    user: Option<Identity>,
-    db_instance: web::Data<DbInstance>,
-) -> Result<web::Json<crate::User>, AuthError> {
-    // If user exists in session, gets User entry from DB
-    if let Some(user) = user {
-        match db_instance.find_user_by_username(&user.id().unwrap()) {
-            Ok(some_user) => match some_user {
-                Some(user) => Ok(web::Json(user)),
-                None => Err(AuthError::Error("User not found".to_string())),
-            },
-            Err(err) => Err(AuthError::InternalServerError(format!("{}", err))),
-        }
-    } else {
-        println!("No user found");
-        Err(AuthError::Error("User not found".to_string()))
-    }
-}
-    */
 
 /// Server function to create a new user
 pub async fn handle_signup(
@@ -146,8 +107,6 @@ pub async fn handle_signup(
             .await
             .expect("Error encrypting username")
     );
-
-    // TODO: Check to ensure unique emails - Maybe I'll end up eliminating usernames all together
 
     // Hash password
     let pass_hash = hash_string(&password);
@@ -283,18 +242,33 @@ pub async fn handle_reset_password(
         .await
         .expect("Error hashing password");
 
+    let username_arc = Arc::new(username);
+    let db_arc = Arc::new(db_instance);
+
     // Store new password in database
-    db_instance
-        .update_db_password(&username, &pass_hash)
+    db_arc
+        .update_db_password(&username_arc, &pass_hash)
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
-    db_instance
-        .delete_db_reset_token(&username)
-        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
+    {
+        let db_arc = Arc::clone(&db_arc);
+        let username_arc = Arc::clone(&username_arc);
+        task::spawn_blocking(move || {
+            if let Err(_) = db_arc.delete_db_reset_token(&username_arc) {
+                eprintln!("Error deleting reset token!!");
+            }
+        });
+    }
 
-    db_instance
-        .unlock_db_user(&username)
-        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
+    {
+        let db_arc = Arc::clone(&db_arc);
+        let username_arc = Arc::clone(&username_arc);
+        task::spawn_blocking(move || {
+            if let Err(_) = db_arc.unlock_db_user(&username_arc) {
+                eprintln!("Error unlocking user!!");
+            }
+        });
+    }
 
     Ok(())
 }
@@ -386,17 +360,16 @@ pub async fn handle_verify_user(
     Ok(())
 }
 
-pub async fn handle_generate_2fa(
+pub async fn handle_generate_2fa<T>(
     username: String,
+    user: T,
     db_instance: web::Data<DbInstance>,
     request: HttpRequest,
-) -> Result<(String, String), AuthError> {
-    let two_factor_enabled = db_instance
-        .user_has_2fa_enabled(&username)
-        .await
-        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
-
-    if two_factor_enabled {
+) -> Result<(String, String), AuthError>
+where
+    T: DatabaseUser,
+{
+    if user.two_factor() {
         return Err(AuthError::Error(
             "Two Factor already enabled for user!".to_string(),
         ));
@@ -406,15 +379,7 @@ pub async fn handle_generate_2fa(
         .await
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
-    let encrypted_token = encrypt_string(&token, EncryptionKey::TwoFactorKey)
-        .await
-        .expect("Error encrypting token");
-
-    db_instance
-        .set_2fa_token_for_db_user(&username, &encrypted_token)
-        .map_err(|_| {
-            AuthError::InternalServerError("Error saving token to database".to_string())
-        })?;
+    user.save_2fa_token(&token, &db_instance).await?;
 
     let enable_2fa_token = generate_jwt_token(&username, "enable_2fa".to_string(), 600)
         .await
@@ -428,18 +393,18 @@ pub async fn handle_generate_2fa(
     Ok((qr_code, token))
 }
 
-pub async fn handle_enable_2fa(
+pub async fn handle_enable_2fa<T>(
     username: String,
+    user: T,
     otp: String,
     enable_2fa_token: String,
     db_instance: web::Data<DbInstance>,
-) -> Result<(), AuthError> {
-    let two_factor_enabled = db_instance
-        .user_has_2fa_enabled(&username)
-        .await
-        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
-
-    if two_factor_enabled {
+) -> Result<(), AuthError>
+where
+    T: DatabaseUser,
+{
+    println!("Trying to enable 2fa");
+    if user.two_factor() {
         return Err(AuthError::Error(
             "Two Factor already enabled for user!".to_string(),
         ));
@@ -454,7 +419,7 @@ pub async fn handle_enable_2fa(
     .await
     .map_err(|_| AuthError::TOTPError)?;
 
-    let totp = get_totp(&username, &db_instance)
+    let totp = get_totp(&username, user.two_factor_token().unwrap())
         .await
         .expect("Error validating token")
         .trim()
@@ -464,20 +429,22 @@ pub async fn handle_enable_2fa(
         return Err(AuthError::TOTPError);
     }
 
-    db_instance
-        .enable_2fa_for_db_user(&username)
-        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
+    user.enable_2fa(&db_instance)?;
 
     Ok(())
 }
 
-pub async fn handle_verify_otp(
+pub async fn handle_verify_otp<T>(
     username: &String,
     otp: String,
+    user: T,
     login_token: String,
     request: &HttpRequest,
     db_instance: web::Data<DbInstance>,
-) -> Result<(), AuthError> {
+) -> Result<(), AuthError>
+where
+    T: DatabaseUser,
+{
     println!("Verifying OTP for {}", username);
     let otp = otp.trim().to_string();
 
@@ -490,7 +457,7 @@ pub async fn handle_verify_otp(
     .await
     .map_err(|_| AuthError::TOTPError)?;
 
-    let totp = get_totp(&username, &db_instance)
+    let totp = get_totp(&username, &user.two_factor_token().unwrap())
         .await
         .expect("Error validating token")
         .trim()

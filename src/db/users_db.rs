@@ -126,15 +126,19 @@ impl DbInstance {
         Ok(())
     }
 
-    pub fn set_2fa_token_for_db_user(
+    pub async fn set_2fa_token_for_db_user(
         &self,
         uname: &String,
         tf_token: &String,
     ) -> Result<(), DBError> {
         let mut connection = self.db_connection.connect()?;
 
+        let encrypted_token = encrypt_string(tf_token, EncryptionKey::TwoFactorKey)
+            .await
+            .unwrap();
+
         diesel::update(users.filter(username.eq(uname)))
-            .set(two_factor_token.eq(tf_token))
+            .set(two_factor_token.eq(encrypted_token))
             .returning(DBUser::as_returning())
             .get_result(&mut connection)?;
 

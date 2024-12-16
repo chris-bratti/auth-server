@@ -42,6 +42,35 @@ pub async fn get_user_from_session() -> Result<crate::UserBasicInfo, ServerFnErr
 }
 
 #[server]
+pub async fn admin_logged_in() -> Result<bool, ServerFnError<AuthError>> {
+    let (_, db_instance) = get_request_data().await?;
+
+    let admin: Option<Identity> = extract().await.map_err(|_| {
+        AuthError::InternalServerError("Invalid session data!".to_string()).to_server_fn_error()
+    })?;
+
+    // If user exists in session, gets User entry from DB
+    if let Some(admin) = admin {
+        match db_instance.get_admin_from_username(&admin.id().unwrap()) {
+            Ok(_) => Ok(true),
+            Err(_) => Ok(false),
+        }
+    } else {
+        println!("No user found in session");
+        Err(AuthError::Error("User not found".to_string()).to_server_fn_error())
+    }
+}
+
+#[server]
+pub async fn admin_exists() -> Result<bool, ServerFnError<AuthError>> {
+    let (_, db_instance) = get_request_data().await?;
+
+    db_instance
+        .admin_exists()
+        .map_err(|err| AuthError::from(err).to_server_fn_error())
+}
+
+#[server]
 pub async fn user_server_side_redirect(
     username: String,
     client_id: String,

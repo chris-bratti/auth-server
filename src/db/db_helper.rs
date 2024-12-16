@@ -32,6 +32,11 @@ impl DbInstance {
         Ok(db_user.is_some())
     }
 
+    pub async fn does_admin_exist(&self, username: &String) -> Result<bool, DBError> {
+        let admin = self.get_admin_from_username(username)?;
+        Ok(admin.is_some())
+    }
+
     pub async fn get_user_2fa_token(&self, username: &String) -> Result<Option<String>, DBError> {
         let db_user = self.get_user_from_username(username).await?;
 
@@ -55,33 +60,6 @@ impl DbInstance {
 
         match db_user {
             Some(user) => Ok(user.two_factor),
-            None => Err(DBError::NotFound(username.to_string())),
-        }
-    }
-
-    pub async fn is_user_locked(&self, username: &String) -> Result<bool, DBError> {
-        let db_user = self.get_user_from_username(username).await?;
-
-        match db_user {
-            Some(user) => {
-                if user.locked {
-                    let timestamp: DateTime<Utc> =
-                        DateTime::from(user.last_failed_attempt.expect("No timestamp!"));
-
-                    // Get the current time
-                    let current_time = Utc::now();
-
-                    // Calculate the difference in minutes
-                    let minutes_since_last_attempt =
-                        current_time.signed_duration_since(timestamp).num_minutes();
-
-                    if minutes_since_last_attempt > 10 {
-                        self.unlock_db_user(username)?;
-                        return Ok(false);
-                    }
-                }
-                Ok(user.locked)
-            }
             None => Err(DBError::NotFound(username.to_string())),
         }
     }

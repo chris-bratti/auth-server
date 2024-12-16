@@ -1,4 +1,5 @@
 #![allow(non_snake_case)]
+use crate::client::admin_pages::AdminPage;
 use crate::client::auth_pages::*;
 use crate::client::client_helpers::get_user_from_session;
 use crate::controllers::Logout;
@@ -35,6 +36,7 @@ pub fn App() -> impl IntoView {
                         <Route path="" view=HomePage/>
                         <Route path="/login" view=Login/>
                         <Route path="/signup" view=Signup/>
+                        <Route path="/admin" view=AdminPage/>
                         <Route
                             path="/user"
                             view=|| {

@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     first_name text NOT NULL,
     last_name text NOT NULL,
-    username text NOT NULL,
+    username text NOT NULL UNIQUE,
     pass_hash text NOT NULL,
     email text NOT NULL,
     verified boolean NOT NULL,
