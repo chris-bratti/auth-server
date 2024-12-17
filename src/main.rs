@@ -1,3 +1,4 @@
+use auth_server::{server::auth_functions::add_admin_task, AdminTask, AdminTaskType};
 use cfg_if::cfg_if;
 
 cfg_if! {
@@ -103,9 +104,13 @@ cfg_if! {
     }
 }
 
+const REDIS_CHANNEL: &str = "new_oauth_clients";
+
 #[cfg(feature = "ssr")]
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    use actix_rt::spawn;
+
     use actix_cors::Cors;
     use actix_web_httpauth::middleware::HttpAuthentication;
 
@@ -117,6 +122,17 @@ async fn main() -> std::io::Result<()> {
 
     let redis_client =
         web::Data::new(redis::Client::open(redis_connection_string.clone()).unwrap());
+
+    // Spawn the Redis subscriber in a separate runtime
+    let subscriber_client = redis_client.clone();
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
+        rt.block_on(async move {
+            if let Err(e) = client_message_subscriber(subscriber_client).await {
+                eprintln!("Error in subscriber task: {}", e);
+            }
+        });
+    });
 
     // Leptos connection stuff, sets site address information
     let conf = get_configuration(None).await.unwrap();
@@ -199,6 +215,7 @@ async fn main() -> std::io::Result<()> {
             )
             .service(register_oauth_client)
             .service(load_clients_into_redis)
+            .service(test_pubsub)
             // Routes needing basic auth validation
             .service(
                 web::scope("/oauth")
@@ -235,6 +252,50 @@ async fn get_user_info(
         user_data: user,
         timestamp: chrono::Utc::now().timestamp(),
     }))
+}
+
+#[cfg(feature = "ssr")]
+async fn publish_client_message(
+    client: web::Data<Client>,
+    client_id: &String,
+) -> Result<(), AuthError> {
+    let mut conn = client.get_connection()?;
+
+    println!("Publisher: Sending messages to {}", REDIS_CHANNEL);
+
+    //let message = format!("Sending client data: {}", client_id);
+
+    //add_admin_task(client, admin_task).await?;
+
+    let message = format!("{client_id}");
+    let () = conn.publish(REDIS_CHANNEL, &message)?;
+
+    Ok(())
+}
+
+#[cfg(feature = "ssr")]
+async fn client_message_subscriber(client: web::Data<Client>) -> Result<(), AuthError> {
+    let mut conn = client.get_connection()?;
+
+    let mut pubsub = conn.as_pubsub();
+    pubsub.subscribe(REDIS_CHANNEL)?;
+
+    println!("Subscriber: Subscribed to {}", REDIS_CHANNEL);
+
+    while let Ok(msg) = pubsub.get_message() {
+        let payload: String = msg.get_payload()?;
+        println!("Subscriber: Received: {}", payload);
+    }
+
+    Ok(())
+}
+
+#[cfg(feature = "ssr")]
+#[post("/internal/test-pubsub")]
+async fn test_pubsub(redis_client: web::Data<Client>) -> Result<impl Responder, AuthError> {
+    publish_client_message(redis_client, &"test-id".to_string()).await?;
+
+    Ok(HttpResponse::Ok().finish())
 }
 
 // Handler for getting oauth token using authorization code or refresh token

@@ -3,6 +3,7 @@ use core::{fmt, str::FromStr};
 use leptos_router::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::io;
 
 use cfg_if::cfg_if;
 
@@ -155,6 +156,38 @@ impl DatabaseUser for AppAdmin {
         db_instance
             .initialize_admin(&self.username, two_factor_token)
             .await
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct AdminTask {
+    pub task_type: AdminTaskType,
+    pub message: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub enum AdminTaskType {
+    ApproveOauthClient,
+}
+
+impl ToString for AdminTaskType {
+    fn to_string(&self) -> String {
+        match self {
+            AdminTaskType::ApproveOauthClient => String::from("approve_oauth_client"),
+        }
+    }
+}
+
+impl FromStr for AdminTaskType {
+    type Err = AuthError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "approve_oauth_client" => Ok(AdminTaskType::ApproveOauthClient),
+            _ => Err(AuthError::InternalServerError(
+                "Invalid AdminTask type".to_string(),
+            )),
+        }
     }
 }
 
