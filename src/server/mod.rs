@@ -1,3 +1,4 @@
+pub mod actors;
 pub mod admin_handlers;
 pub mod auth_functions;
 pub mod auth_handlers;

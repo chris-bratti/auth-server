@@ -109,7 +109,7 @@ pub async fn handle_register_oauth_client(
     register_client_request: RegisterNewClientRequest,
     db_instance: &web::Data<DbInstance>,
     redis_client: &web::Data<Client>,
-) -> Result<HttpResponse, AuthError> {
+) -> Result<RegisterNewClientResponse, AuthError> {
     // Generate a random but short id
     let client_id = generate_token()
         .get(0..10)
@@ -146,12 +146,12 @@ pub async fn handle_register_oauth_client(
 
     //println!("Implement pubsub model");
 
-    Ok(HttpResponse::Ok().json(RegisterNewClientResponse {
+    Ok(RegisterNewClientResponse {
         success: true,
         client_id,
         client_secret,
         redirect_url,
-    }))
+    })
 }
 
 pub async fn handle_request_oauth_token(

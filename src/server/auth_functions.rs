@@ -18,7 +18,7 @@ use argon2::{
 use dotenvy::dotenv;
 use redis::{Client, Commands};
 
-use crate::{db::db_helper::DbInstance, AdminTask, Claims, DBError, DatabaseUser};
+use crate::{db::db_helper::DbInstance, Claims, DBError, DatabaseUser};
 use crate::{AuthError, EncryptionKey, OauthClaims};
 use totp_rs::{Algorithm, Secret, TOTP};
 
@@ -333,20 +333,6 @@ where
         }
     }
     Ok(db_user.is_locked())
-}
-
-pub async fn add_admin_task(
-    client: web::Data<Client>,
-    admin_task: AdminTask,
-) -> Result<(), AuthError> {
-    let mut connection = client.get_connection()?;
-
-    let task_json = serde_json::to_string(&admin_task)
-        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
-
-    let () = connection.lpush("admin_tasks", task_json)?;
-
-    Ok(())
 }
 
 #[cfg(test)]

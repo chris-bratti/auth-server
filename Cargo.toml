@@ -49,6 +49,7 @@ actix-cors = {version ="0.7.0", optional = true}
 actix-web-httpauth = {version = "0.8.2", optional = true}
 url = { version = "2.5.4", optional = true }
 actix-rt = {version = "2.10.0", optional = true}
+actix = { version = "0.13.5", optional = true }
 
 [features]
 csr = ["leptos/csr", "leptos_meta/csr", "leptos_router/csr"]
@@ -80,7 +81,8 @@ ssr = [
   "dep:actix-cors",
   "dep:actix-web-httpauth",
   "dep:url",
-  "dep:actix-rt"
+  "dep:actix-rt",
+  "dep:actix"
 ]
 dotenvy = ["dep:dotenvy"]
 true = ["dep:true"]

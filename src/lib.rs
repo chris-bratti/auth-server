@@ -3,7 +3,6 @@ use core::{fmt, str::FromStr};
 use leptos_router::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::io;
 
 use cfg_if::cfg_if;
 
@@ -19,6 +18,7 @@ cfg_if! {
     use db::db_helper::DbInstance;
     use actix_web::web;
     use std::time::SystemTime;
+    use actix::prelude::*;
     }
 }
 pub mod client;
@@ -159,36 +159,17 @@ impl DatabaseUser for AppAdmin {
     }
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct AdminTask {
+#[cfg(feature = "ssr")]
+#[derive(Message, Serialize, Deserialize)]
+#[rtype(result = "Result<(), AuthError>")]
+pub struct AdminTaskMessage {
     pub task_type: AdminTaskType,
     pub message: String,
 }
 
 #[derive(Serialize, Deserialize)]
 pub enum AdminTaskType {
-    ApproveOauthClient,
-}
-
-impl ToString for AdminTaskType {
-    fn to_string(&self) -> String {
-        match self {
-            AdminTaskType::ApproveOauthClient => String::from("approve_oauth_client"),
-        }
-    }
-}
-
-impl FromStr for AdminTaskType {
-    type Err = AuthError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "approve_oauth_client" => Ok(AdminTaskType::ApproveOauthClient),
-            _ => Err(AuthError::InternalServerError(
-                "Invalid AdminTask type".to_string(),
-            )),
-        }
-    }
+    ApproveOauthClient { app_name: String, client_id: String },
 }
 
 #[derive(Clone, Serialize, Deserialize)]
