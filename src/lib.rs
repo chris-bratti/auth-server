@@ -159,17 +159,47 @@ impl DatabaseUser for AppAdmin {
     }
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+pub struct AdminTask {
+    pub task_type: AdminTaskType,
+    pub message: String,
+    pub id: usize,
+}
+
 #[cfg(feature = "ssr")]
-#[derive(Message, Serialize, Deserialize)]
+#[derive(Message, Serialize, Deserialize, Clone)]
 #[rtype(result = "Result<(), AuthError>")]
 pub struct AdminTaskMessage {
     pub task_type: AdminTaskType,
     pub message: String,
+    pub id: usize,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub enum AdminTaskType {
     ApproveOauthClient { app_name: String, client_id: String },
+}
+
+impl AdminTaskType {
+    pub fn to_display(&self) -> String {
+        match self {
+            AdminTaskType::ApproveOauthClient {
+                app_name,
+                client_id,
+            } => format!("New OAuth application {app_name} with ID {client_id} requires approval"),
+        }
+    }
+}
+
+#[cfg(feature = "ssr")]
+impl AdminTaskMessage {
+    pub fn into_admin_task(self) -> AdminTask {
+        AdminTask {
+            task_type: self.task_type,
+            message: self.message,
+            id: self.id,
+        }
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]

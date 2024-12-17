@@ -1,7 +1,9 @@
 use actix_web::web;
+use redis::{Client, Commands};
 
 use crate::{
-    check_valid_password, db::db_helper::DbInstance, encrypt_string, AuthError, EncryptionKey,
+    check_valid_password, db::db_helper::DbInstance, encrypt_string, AdminTaskMessage, AuthError,
+    EncryptionKey,
 };
 
 pub async fn handle_signup_admin(
@@ -20,8 +22,6 @@ pub async fn handle_signup_admin(
         return Err(AuthError::InvalidPassword);
     }
 
-    println!("Valid passowrd");
-
     // Usernames should case insensitive
     let username: String = username.trim().to_lowercase();
 
@@ -34,7 +34,22 @@ pub async fn handle_signup_admin(
 
     db_instance.create_admin(&username, &password).await?;
 
-    println!("Created admin");
+    println!("Registered new admin");
 
     Ok(())
+}
+
+pub async fn handle_get_admin_tasks(
+    redis_client: web::Data<Client>,
+) -> Result<Vec<AdminTaskMessage>, AuthError> {
+    let mut con = redis_client.get_connection()?;
+    let tasks: Vec<String> = con.lrange("admin_tasks", 0, -1)?;
+
+    let admin_tasks: Vec<AdminTaskMessage> = tasks
+        .into_iter()
+        .map(|task_string| serde_json::from_str(&task_string))
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+
+    Ok(admin_tasks)
 }

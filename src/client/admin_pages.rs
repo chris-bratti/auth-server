@@ -1,8 +1,8 @@
 #![allow(non_snake_case)]
 use crate::{
-    client::client_helpers::{admin_exists, admin_logged_in},
+    client::client_helpers::{admin_exists, admin_logged_in, get_admin_tasks},
     controllers::*,
-    AuthError,
+    AdminTask, AuthError,
 };
 use leptos::*;
 use leptos_router::*;
@@ -41,13 +41,6 @@ pub fn AdminPage() -> impl IntoView {
             }
            }
        </Suspense>
-    }
-}
-
-#[component]
-pub fn AdminHomepage() -> impl IntoView {
-    view! {
-        <h1>"You've made it to the admin page!"</h1>
     }
 }
 
@@ -401,5 +394,74 @@ pub fn AdminEnableTwoFactor(admin: ReadSignal<Option<String>>) -> impl IntoView 
                     .into_view()
             }
         }}
+    }
+}
+
+#[component]
+pub fn AdminHomepage() -> impl IntoView {
+    let get_admin_tasks =
+        create_blocking_resource(|| (), move |_| async move { get_admin_tasks().await });
+
+    let admin_tasks_fetched =
+        move || get_admin_tasks.get().is_some() && get_admin_tasks.get().unwrap().is_ok();
+
+    view! {
+        <h1>"Admin Homepage"</h1>
+        <Suspense fallback=|| {
+            view! { <h1>Loading....</h1> }
+        }>
+            {move ||{
+                 if admin_tasks_fetched() {
+                     view! {
+                         <AdminTasks admin_tasks=get_admin_tasks.get().unwrap().unwrap()/>
+                     }.into_view()
+                 }else{
+                     view! {}.into_view()
+                 }
+             }
+            }
+        </Suspense>
+    }
+}
+
+#[component]
+pub fn AdminTasks(admin_tasks: Vec<AdminTask>) -> impl IntoView {
+    let task_list = RwSignal::from(admin_tasks);
+    view! {
+        <h1>Admin Tasks</h1>
+        <div class="card-container">
+                <For
+                    each=move || task_list.get()
+                    key=|admin_task| admin_task.id
+                    children=move |message| {
+                        view! {
+                            <AdminTaskCard admin_task=message/>
+                        }
+                    }
+                />
+        </div>
+    }
+}
+
+#[component]
+pub fn AdminTaskCard(admin_task: AdminTask) -> impl IntoView {
+    //let logout = create_server_action::<Logout>();
+    let AdminTask {
+        task_type,
+        message,
+        id: _,
+    } = admin_task.into();
+    let body = task_type.to_display();
+    view! {
+        <div class="card">
+            <div class="card-content">
+                <div class="card-title">{message}</div>
+                <div class="card-description">{body}</div>
+            </div>
+            <div class="card-action">
+                //<button class="card-button" on:click=move |_| logout.dispatch(Logout{})>"Logout"</button>
+                <button class="card-button" onclick="">Click Me</button>
+            </div>
+        </div>
     }
 }

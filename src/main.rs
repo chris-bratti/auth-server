@@ -37,6 +37,9 @@ cfg_if! {
         use url::form_urlencoded;
         use auth_server::server::actors::AdminTaskActor;
         use actix::prelude::*;
+        use auth_server::AdminTaskMessage;
+        extern crate rand;
+        use rand::Rng;
 
         async fn basic_validator(
             req: ServiceRequest,
@@ -293,8 +296,6 @@ async fn register_oauth_client(
     db_instance: web::Data<DbInstance>,
     redis_client: web::Data<Client>,
 ) -> Result<HttpResponse, AuthError> {
-    use auth_server::AdminTaskMessage;
-
     let admin_key = request
         .headers()
         .get("X-Admin-Key")
@@ -324,6 +325,7 @@ async fn register_oauth_client(
             app_name,
         },
         message: "New OAuth client requires approval".into(),
+        id: rand::thread_rng().gen_range(1..=500),
     };
 
     // Send task message to handlers

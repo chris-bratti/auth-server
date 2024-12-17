@@ -1,3 +1,4 @@
+use crate::AdminTask;
 use crate::AuthError;
 use cfg_if::cfg_if;
 use leptos::server;
@@ -13,6 +14,7 @@ cfg_if! {
             OAuthRedirect,
             UserBasicInfo,
             server::oauth_handlers::handle_request_oauth_token};
+        use crate::server::admin_handlers::handle_get_admin_tasks;
     }
 }
 
@@ -109,4 +111,21 @@ pub async fn get_request_data(
     })?;
 
     Ok((req, db_instance))
+}
+
+#[server]
+pub async fn get_admin_tasks() -> Result<Vec<AdminTask>, ServerFnError<AuthError>> {
+    let redis_client: web::Data<redis::Client> = extract().await.map_err(|_| {
+        AuthError::InternalServerError("Unable to find session data".to_string())
+            .to_server_fn_error()
+    })?;
+
+    let tasks = handle_get_admin_tasks(redis_client)
+        .await
+        .map_err(|err| ServerFnError::WrappedServerError(err))?;
+
+    Ok(tasks
+        .into_iter()
+        .map(|task| task.into_admin_task())
+        .collect::<Vec<AdminTask>>())
 }

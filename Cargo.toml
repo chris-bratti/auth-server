@@ -28,7 +28,7 @@ argon2 = "0.5.3"
 lazy_static = { version = "1.5.0", optional = true }
 regex = { version = "1.11.1", optional = true }
 chrono = "0.4.39"
-rand = "0.8.5"
+rand = { version = "0.8.5", optional = true, features = ["std"] }
 lettre ={version = "0.11.11", optional= true}
 maud = {version = "0.26.0", optional=true}
 aes-gcm = "0.10.3"
@@ -82,7 +82,8 @@ ssr = [
   "dep:actix-web-httpauth",
   "dep:url",
   "dep:actix-rt",
-  "dep:actix"
+  "dep:actix",
+  "dep:rand"
 ]
 dotenvy = ["dep:dotenvy"]
 true = ["dep:true"]
