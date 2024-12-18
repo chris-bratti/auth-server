@@ -111,6 +111,9 @@ pub mod test_oauth_dbs {
 
         assert_eq!(unencrypted_secret, c_secret);
 
+        //Approve client
+        DB_INSTANCE.approve_oauth_client(&c_id).unwrap();
+
         // Read
         let clients = DB_INSTANCE.get_oauth_clients().unwrap().unwrap();
 
