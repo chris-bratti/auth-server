@@ -23,10 +23,12 @@ cfg_if! {
         use actix_identity::Identity;
         use crate::client::client_helpers::get_request_data;
         use crate::client::client_helpers;
-        use crate::get_env_variable;
         use crate::server::admin_handlers::handle_signup_admin;
         use redis::{Commands};
-        use crate::approve_oauth_client;
+        use crate::server::auth_functions::approve_oauth_client;
+        use crate::server::auth_functions::get_env_variable;
+        use actix_web::HttpMessage;
+
     }
 }
 
@@ -131,9 +133,11 @@ pub async fn admin_enable_2fa(
         .map_err(|err| AuthError::from(err))?
         .ok_or_else(|| AuthError::InvalidCredentials)?;
 
-    handle_enable_2fa(username, admin, otp, two_factor_token, db_instance).await?;
+    handle_enable_2fa(&username, admin, otp, two_factor_token, db_instance).await?;
 
     req.get_session().remove("2fa");
+
+    Identity::login(&req.extensions(), username.clone().into()).unwrap();
 
     Ok(true)
 }
@@ -375,7 +379,7 @@ pub async fn enable_2fa(username: String, otp: String) -> Result<bool, ServerFnE
         );
     }
 
-    handle_enable_2fa(username, db_user, otp, two_factor_token, db_instance).await?;
+    handle_enable_2fa(&username, db_user, otp, two_factor_token, db_instance).await?;
 
     req.get_session().remove("2fa");
 

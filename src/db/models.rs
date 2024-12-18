@@ -138,36 +138,3 @@ pub struct NewOauthClient<'a> {
     pub redirect_url: &'a str,
     pub approved: &'a bool,
 }
-
-use diesel::{r2d2::ConnectionManager, PgConnection};
-use r2d2::{Pool, PooledConnection};
-
-use crate::{get_env_variable, DBError};
-
-pub struct DbConnection {
-    connection_pool: Pool<ConnectionManager<PgConnection>>,
-}
-
-impl DbConnection {
-    pub fn connect(&self) -> Result<PooledConnection<ConnectionManager<PgConnection>>, DBError> {
-        self.connection_pool
-            .get()
-            .map_err(|_| DBError::Error("Error establishing connection!".to_string()))
-    }
-
-    pub fn new() -> Self {
-        println!("Establishing database connection");
-        let database_url = get_env_variable("DATABASE_URL").unwrap();
-        let manager = ConnectionManager::<PgConnection>::new(&database_url);
-        let connection_pool = Pool::builder()
-            .test_on_check_out(true)
-            .max_size(15)
-            .build(manager)
-            .unwrap();
-        DbConnection { connection_pool }
-    }
-
-    pub fn test_instance() {
-        todo!()
-    }
-}

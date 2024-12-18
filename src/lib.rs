@@ -4,23 +4,6 @@ use leptos_router::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use cfg_if::cfg_if;
-
-cfg_if! {
-    if #[cfg(feature = "ssr")] {
-        use actix_web::{http::StatusCode, HttpResponse, ResponseError};
-        use thiserror::Error;
-    use leptos::ServerFnError;
-    use redis::RedisError;
-    use server::auth_functions::*;
-    use db::models::DBUser;
-    use db::models::AppAdmin;
-    use db::db_helper::DbInstance;
-    use actix_web::web;
-    use std::time::SystemTime;
-    use actix::prelude::*;
-    }
-}
 pub mod client;
 pub mod controllers;
 
@@ -43,133 +26,8 @@ pub fn hydrate() {
     mount_to_body(App);
 }
 
-#[cfg(feature = "ssr")]
-pub trait DatabaseUser {
-    fn is_locked(&self) -> bool;
-    fn last_failed_attempt(&self) -> Option<SystemTime>;
-    fn pass_hash(&self) -> &String;
-    fn two_factor_token(&self) -> Option<&String>;
-    fn two_factor(&self) -> bool;
-    fn verified(&self) -> bool;
-    fn increment_password_tries(
-        &self,
-        db_instance: &web::Data<DbInstance>,
-    ) -> Result<bool, DBError>;
-    fn enable_2fa(&self, db_instance: &web::Data<DbInstance>) -> Result<(), DBError>;
-    async fn save_2fa_token(
-        &self,
-        two_factor_token: &String,
-        db_instance: &web::Data<DbInstance>,
-    ) -> Result<(), DBError>;
-}
-
-#[cfg(feature = "ssr")]
-impl DatabaseUser for DBUser {
-    fn is_locked(&self) -> bool {
-        self.locked
-    }
-
-    fn last_failed_attempt(&self) -> Option<SystemTime> {
-        self.last_failed_attempt
-    }
-
-    fn pass_hash(&self) -> &String {
-        &self.pass_hash
-    }
-
-    fn two_factor(&self) -> bool {
-        self.two_factor
-    }
-
-    fn verified(&self) -> bool {
-        self.verified
-    }
-
-    fn increment_password_tries(
-        &self,
-        db_instance: &web::Data<DbInstance>,
-    ) -> Result<bool, DBError> {
-        db_instance.increment_db_password_tries(&self.username)
-    }
-
-    fn two_factor_token(&self) -> Option<&String> {
-        self.two_factor_token.as_ref()
-    }
-
-    fn enable_2fa(&self, db_instance: &web::Data<DbInstance>) -> Result<(), DBError> {
-        db_instance.enable_2fa_for_db_user(&self.username)
-    }
-
-    async fn save_2fa_token(
-        &self,
-        two_factor_token: &String,
-        db_instance: &web::Data<DbInstance>,
-    ) -> Result<(), DBError> {
-        db_instance
-            .set_2fa_token_for_db_user(&self.username, two_factor_token)
-            .await
-    }
-}
-
-#[cfg(feature = "ssr")]
-impl DatabaseUser for AppAdmin {
-    fn is_locked(&self) -> bool {
-        self.locked
-    }
-
-    fn last_failed_attempt(&self) -> Option<SystemTime> {
-        self.last_failed_attempt
-    }
-
-    fn pass_hash(&self) -> &String {
-        &self.pass_hash
-    }
-
-    fn two_factor(&self) -> bool {
-        true
-    }
-
-    fn verified(&self) -> bool {
-        self.initialized
-    }
-
-    fn increment_password_tries(
-        &self,
-        db_instance: &web::Data<DbInstance>,
-    ) -> Result<bool, DBError> {
-        db_instance.increment_admin_password_retries(&self.username)
-    }
-
-    fn two_factor_token(&self) -> Option<&String> {
-        self.two_factor_token.as_ref()
-    }
-
-    fn enable_2fa(&self, _: &web::Data<DbInstance>) -> Result<(), DBError> {
-        Ok(())
-    }
-
-    async fn save_2fa_token(
-        &self,
-        two_factor_token: &String,
-        db_instance: &web::Data<DbInstance>,
-    ) -> Result<(), DBError> {
-        db_instance
-            .initialize_admin(&self.username, two_factor_token)
-            .await
-    }
-}
-
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct AdminTask {
-    pub task_type: AdminTaskType,
-    pub message: String,
-    pub id: usize,
-}
-
-#[cfg(feature = "ssr")]
-#[derive(Message, Serialize, Deserialize, Clone)]
-#[rtype(result = "Result<(), AuthError>")]
-pub struct AdminTaskMessage {
     pub task_type: AdminTaskType,
     pub message: String,
     pub id: usize,
@@ -194,18 +52,6 @@ impl AdminTaskType {
     }
 }
 
-// Translates the server-side AdminTaskMessage to a client-compatible AdminTask
-#[cfg(feature = "ssr")]
-impl AdminTaskMessage {
-    pub fn into_admin_task(self) -> AdminTask {
-        AdminTask {
-            task_type: self.task_type,
-            message: self.message,
-            id: self.id,
-        }
-    }
-}
-
 #[derive(Clone, Serialize, Deserialize)]
 pub enum AuthError {
     InvalidCredentials,
@@ -219,65 +65,9 @@ pub enum AuthError {
     InvalidRequest(String),
 }
 
-#[cfg(feature = "ssr")]
-impl AuthError {
-    pub fn to_server_fn_error(self) -> ServerFnError<AuthError> {
-        ServerFnError::WrappedServerError(self)
-    }
-}
-
-#[cfg(feature = "ssr")]
-impl From<RedisError> for AuthError {
-    fn from(err: RedisError) -> Self {
-        AuthError::InternalServerError(err.to_string())
-    }
-}
-
-#[cfg(feature = "ssr")]
-impl From<DBError> for AuthError {
-    fn from(err: DBError) -> Self {
-        AuthError::InternalServerError(err.to_string())
-    }
-}
-
 impl From<aes_gcm::Error> for AuthError {
     fn from(err: aes_gcm::Error) -> Self {
         AuthError::InternalServerError(err.to_string())
-    }
-}
-
-#[cfg(feature = "ssr")]
-impl From<jsonwebtoken::errors::Error> for AuthError {
-    fn from(err: jsonwebtoken::errors::Error) -> Self {
-        AuthError::InternalServerError(err.to_string())
-    }
-}
-
-#[cfg(feature = "ssr")]
-impl ResponseError for AuthError {
-    fn error_response(&self) -> HttpResponse {
-        let error_message = format!("{}", self);
-
-        // Build the JSON response
-        let body = serde_json::json!({
-            "success": false,
-            "message": error_message
-        });
-
-        // Customize the HTTP status code if needed
-        let status_code = match *self {
-            AuthError::InvalidCredentials => StatusCode::UNAUTHORIZED,
-            AuthError::InternalServerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            AuthError::InvalidToken => StatusCode::UNAUTHORIZED,
-            AuthError::PasswordConfirmationError => StatusCode::UNAUTHORIZED,
-            AuthError::InvalidPassword => StatusCode::UNAUTHORIZED,
-            AuthError::AccountLocked => StatusCode::UNAUTHORIZED,
-            AuthError::TOTPError => StatusCode::UNAUTHORIZED,
-            AuthError::Error(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            AuthError::InvalidRequest(_) => StatusCode::BAD_REQUEST,
-        };
-
-        HttpResponse::build(status_code).json(body)
     }
 }
 
@@ -358,40 +148,11 @@ impl FromStr for AuthError {
     }
 }
 
-#[cfg(feature = "ssr")]
-#[derive(Error, Debug)]
-pub enum DBError {
-    #[error("User not found: {0}")]
-    NotFound(String),
-    #[error("Internal server error: {0}")]
-    InternalServerError(#[from] diesel::result::Error),
-    #[error("Error: {0}")]
-    Error(String),
-    #[error("Database connection error: {0}")]
-    ConnectionError(#[from] diesel::ConnectionError),
-    #[error("Token invalid or expired")]
-    TokenExpired,
-}
-
 pub enum EncryptionKey {
     SmtpKey,
     TwoFactorKey,
     LoggerKey,
     OauthKey,
-}
-
-#[cfg(feature = "ssr")]
-impl EncryptionKey {
-    pub fn get(&self) -> String {
-        let key = match self {
-            EncryptionKey::SmtpKey => "SMTP_ENCRYPTION_KEY",
-            EncryptionKey::TwoFactorKey => "TWO_FACTOR_KEY",
-            EncryptionKey::LoggerKey => "LOG_KEY",
-            EncryptionKey::OauthKey => "OAUTH_ENCRYPTION_KEY",
-        };
-
-        get_env_variable(key).expect("Encryption key is unset!")
-    }
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
@@ -412,20 +173,6 @@ impl From<User> for UserBasicInfo {
             username: user.username,
             two_factor: user.two_factor,
             verified: user.verified,
-        }
-    }
-}
-
-#[cfg(feature = "ssr")]
-impl From<DBUser> for User {
-    fn from(db_user: DBUser) -> Self {
-        User {
-            first_name: db_user.first_name,
-            last_name: db_user.last_name,
-            username: db_user.username,
-            two_factor: db_user.two_factor,
-            verified: db_user.verified,
-            email: db_user.email,
         }
     }
 }

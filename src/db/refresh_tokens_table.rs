@@ -1,8 +1,9 @@
 use super::db_helper::DbInstance;
 use super::models::{NewRefreshToken, OauthClient};
 use super::schema::{oauth_clients, refresh_tokens};
+use super::DBError;
 use crate::db::schema::{self};
-use crate::{decrypt_string, encrypt_string, DBError};
+use crate::server::auth_functions::{decrypt_string, encrypt_string};
 use diesel::dsl::select;
 use diesel::prelude::*;
 use schema::refresh_tokens::dsl::*;

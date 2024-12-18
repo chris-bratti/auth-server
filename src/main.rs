@@ -37,7 +37,6 @@ cfg_if! {
         use url::form_urlencoded;
         use auth_server::server::actors::AdminTaskActor;
         use actix::prelude::*;
-        use auth_server::AdminTaskMessage;
         extern crate rand;
         use rand::Rng;
 
@@ -296,6 +295,8 @@ async fn register_oauth_client(
     db_instance: web::Data<DbInstance>,
     redis_client: web::Data<Client>,
 ) -> Result<HttpResponse, AuthError> {
+    use auth_server::server::AdminTaskMessage;
+
     let admin_key = request
         .headers()
         .get("X-Admin-Key")

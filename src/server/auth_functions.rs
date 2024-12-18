@@ -18,7 +18,7 @@ use argon2::{
 use dotenvy::dotenv;
 use redis::{Client, Commands};
 
-use crate::{db::db_helper::DbInstance, Claims, DBError, DatabaseUser};
+use crate::{db::db_helper::DbInstance, Claims};
 use crate::{AuthError, EncryptionKey, OauthClaims};
 use totp_rs::{Algorithm, Secret, TOTP};
 
@@ -26,7 +26,7 @@ use regex::Regex;
 
 use lazy_static::lazy_static;
 
-use super::oauth_handlers::handle_reload_oauth_clients;
+use super::{oauth_handlers::handle_reload_oauth_clients, DBError, DatabaseUser};
 
 lazy_static! {
     static ref JWT_SECRET: String = get_env_variable("JWT_KEY").expect("JWT_KEY is unset!");
@@ -353,7 +353,10 @@ mod test_auth {
 
     use core::{assert_eq, assert_ne};
 
-    use crate::{check_valid_password, decrypt_string, verify_hash, EncryptionKey};
+    use crate::{
+        server::auth_functions::{check_valid_password, decrypt_string, verify_hash},
+        EncryptionKey,
+    };
 
     use super::{encrypt_string, get_totp_config, hash_string};
 

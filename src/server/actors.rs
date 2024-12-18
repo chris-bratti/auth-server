@@ -2,7 +2,9 @@ use actix::prelude::*;
 use actix_web::web;
 use redis::{Client, Commands};
 
-use crate::{AdminTaskMessage, AuthError};
+use crate::AuthError;
+
+use super::AdminTaskMessage;
 
 const TASK_KEY: &str = "admin_tasks";
 

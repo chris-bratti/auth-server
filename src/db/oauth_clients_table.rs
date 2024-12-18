@@ -1,7 +1,8 @@
 use super::db_helper::DbInstance;
 use super::models::{NewOauthClient, OauthClient};
+use super::DBError;
 use crate::db::schema::{self};
-use crate::{encrypt_string, DBError};
+use crate::server::auth_functions::encrypt_string;
 use diesel::prelude::*;
 use schema::oauth_clients::dsl::*;
 
@@ -75,7 +76,10 @@ pub mod test_oauth_dbs {
 
     use serial_test::serial;
 
-    use crate::{db::db_helper::DbInstance, decrypt_string, generate_token};
+    use crate::{
+        db::db_helper::DbInstance,
+        server::auth_functions::{decrypt_string, generate_token},
+    };
 
     use lazy_static::lazy_static;
 

@@ -3,9 +3,9 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 
-use crate::{DBError, User, UserInfo};
+use crate::{User, UserInfo};
 
-use super::models::DbConnection;
+use super::{DBError, DbConnection};
 
 pub struct DbInstance {
     pub db_connection: Arc<DbConnection>,

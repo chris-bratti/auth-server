@@ -10,9 +10,10 @@ use tokio::task;
 
 use crate::server::smtp::{generate_welcome_email_body, send_email};
 use crate::{db::db_helper::*, server::auth_functions::*, AuthError, EncryptionKey};
-use crate::{AuthResponse, DatabaseUser, UserInfo};
+use crate::{AuthResponse, UserInfo};
 
 use super::smtp::generate_reset_email_body;
+use super::DatabaseUser;
 
 /// Server function to log in user
 pub async fn handle_login<T>(
@@ -388,7 +389,7 @@ where
 }
 
 pub async fn handle_enable_2fa<T>(
-    username: String,
+    username: &String,
     user: T,
     otp: String,
     enable_2fa_token: String,

@@ -1,9 +1,10 @@
-use crate::{encrypt_string, hash_string, DBError};
+use crate::server::auth_functions::{encrypt_string, hash_string};
 
 use super::{
     db_helper::DbInstance,
     models::{AppAdmin, NewAppAdmin},
     schema::{self},
+    DBError,
 };
 use chrono::{DateTime, Utc};
 use diesel::prelude::*;

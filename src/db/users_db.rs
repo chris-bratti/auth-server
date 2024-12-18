@@ -1,12 +1,14 @@
 use crate::db::models::{DBUser, NewDBUser};
 use crate::db::schema::{self};
-use crate::{decrypt_string, encrypt_string, DBError, EncryptionKey, UserInfo};
+use crate::server::auth_functions::{decrypt_string, encrypt_string};
+use crate::{EncryptionKey, UserInfo};
 use chrono::{DateTime, Utc};
 use diesel::{prelude::*, select};
 use schema::users::dsl::*;
 
 use super::db_helper::DbInstance;
 use super::schema::users;
+use super::DBError;
 
 impl DbInstance {
     pub async fn create_db_user(&self, user_info: UserInfo) -> Result<DBUser, DBError> {
