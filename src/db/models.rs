@@ -9,6 +9,7 @@ use diesel::prelude::*;
 pub struct AppAdmin {
     pub id: i32,
     pub username: String,
+    pub email: String,
     pub pass_hash: String,
     pub initialized: bool,
     pub two_factor_token: Option<String>,
@@ -21,6 +22,7 @@ pub struct AppAdmin {
 #[diesel(table_name = admins)]
 pub struct NewAppAdmin<'a> {
     pub username: &'a str,
+    pub email: &'a str,
     pub pass_hash: &'a str,
     pub initialized: &'a bool,
     pub locked: &'a bool,

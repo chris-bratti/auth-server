@@ -40,7 +40,7 @@ pub fn AdminPage() -> impl IntoView {
                         }}
                     }.into_view()
                 }else{
-                    view! {<AdminSignup admin_session_result=admin_session_result/>}.into_view()
+                    view! {<AdminSignup admin_session_result=admin_session_result admin_result=admin_result/>}.into_view()
                 }
             }
            }
@@ -193,6 +193,7 @@ pub fn AdminLogin(
 #[component]
 pub fn AdminSignup(
     admin_session_result: Resource<(), Result<bool, ServerFnError<AuthError>>>,
+    admin_result: Resource<(), Result<bool, ServerFnError<AuthError>>>,
 ) -> impl IntoView {
     // Uses the SignUp server function
     let signup = create_server_action::<SignupAdmin>();
@@ -214,7 +215,7 @@ pub fn AdminSignup(
                     if admin.get().is_some(){
                         view! {
                             <div class="container">
-                                <AdminEnableTwoFactor admin=admin admin_session_result=admin_session_result/>
+                                <AdminEnableTwoFactor admin=admin admin_session_result=admin_session_result admin_result=admin_result/>
                             </div>
                         }
                             .into_view()
@@ -276,11 +277,22 @@ pub fn AdminSignup(
                                                 <label class="form-label">
                                                     <input
                                                         class="form-control"
+                                                        type="email"
+                                                        name="email"
+                                                        required=true
+                                                        placeholder="Email"
+                                                    />
+                                                </label>
+                                            </div>
+                                            <div class="mb-3">
+                                                <label class="form-label">
+                                                    <input
+                                                        class="form-control"
                                                         type="password"
                                                         name="password"
                                                         required=true
                                                         minLength=8
-                                                        maxLength=16
+                                                        maxLength=24
                                                         pattern=PASSWORD_PATTERN
                                                         placeholder="Password"
                                                     />
@@ -294,7 +306,7 @@ pub fn AdminSignup(
                                                         name="confirm_password"
                                                         required=true
                                                         minLength=8
-                                                        maxLength=16
+                                                        maxLength=24
                                                         pattern=PASSWORD_PATTERN
                                                         placeholder="Confirm Password"
                                                     />
@@ -349,6 +361,7 @@ pub fn AdminSignup(
 pub fn AdminEnableTwoFactor(
     admin: ReadSignal<Option<String>>,
     admin_session_result: Resource<(), Result<bool, ServerFnError<AuthError>>>,
+    admin_result: Resource<(), Result<bool, ServerFnError<AuthError>>>,
 ) -> impl IntoView {
     let qr_code = create_resource(
         || (),
@@ -357,7 +370,7 @@ pub fn AdminEnableTwoFactor(
 
     let enable_2fa = create_server_action::<AdminEnable2fa>();
     let loading = qr_code.loading();
-    let value = enable_2fa.value();
+    let enable_2fa_value = enable_2fa.value();
     view! {
         {move || {
             if loading() {
@@ -393,11 +406,28 @@ pub fn AdminEnableTwoFactor(
                         <input class="btn btn-primary" type="submit" value="Enable Two Factor"/>
                     </ActionForm>
                     {move || {
-                        if value().is_some() && value().unwrap().is_err() {
-                            view! {<p>{value().unwrap().unwrap()}</p>}.into_view()
-                        }else{
-                            admin_session_result.refetch();
-                            view! {}.into_view()
+                        match enable_2fa_value.get() {
+                            Some(response) => {
+                                match response {
+                                    Ok(success) => {
+                                        if success {
+                                            admin_session_result.refetch();
+                                            admin_result.refetch();
+                                            view! {}.into_view()
+                                        }else{
+                                            view! {<h1>"Something went wrong, please try again"</h1>}.into_view()
+                                        }
+                                    },
+                                    Err(server_err) => {
+                                        view! {
+                                            // Displays any errors returned from the server
+                                            <p>{format!("{}", server_err.to_string())}</p>
+                                        }
+                                            .into_view()
+                                    }
+                                }
+                            }
+                            None => view! {}.into_view(),
                         }
                     }}
                 }
@@ -441,19 +471,21 @@ pub fn AdminTasks(
 ) -> impl IntoView {
     let task_list = RwSignal::from(admin_tasks);
     view! {
-        <h1>Admin Tasks</h1>
-        <div class="card-container">
-                <For
-                    each=move || task_list.get()
-                    key=|admin_task| admin_task.id
-                    children=move |task| {
-                        let task = RwSignal::from(task);
-                        view! {
-                            <AdminTaskCard admin_task=task get_admin_tasks=get_admin_tasks/>
+        //<div class="tasks-container">
+            <h3 class="tasks-header">"Admin Tasks"</h3>
+            <div class="card-container">
+                    <For
+                        each=move || task_list.get()
+                        key=|admin_task| admin_task.id
+                        children=move |task| {
+                            let task = RwSignal::from(task);
+                            view! {
+                                <AdminTaskCard admin_task=task get_admin_tasks=get_admin_tasks/>
+                            }
                         }
-                    }
-                />
-        </div>
+                    />
+            </div>
+        //</div>
     }
 }
 
@@ -469,22 +501,25 @@ pub fn AdminTaskCard(
         <div class="card">
             <div class="card-content">
                 <div class="card-title">{admin_task.get().message}</div>
-                <div class="card-description">{admin_task.get().task_type.to_display()}</div>
+                <div class="card-body">
+                    <div class="card-description">{admin_task.get().task_type.to_display()}</div>
+                </div>
             </div>
             <div class="card-action">
-                <button class="card-button" on:click=
-                    move |_| {
-                        approve.dispatch(ApproveTask{admin_task: approval_task.get()});
-                        get_admin_tasks.refetch();
-                    }
-                >"Approve"</button>
-                <button class="card-button" on:click=
-                    move |_| {
-                        dismiss.dispatch(DismissTask{admin_task: approval_task.get()});
-                        get_admin_tasks.refetch();
-                    }
-                >"Deny"</button>
-                //<button class="card-button" onclick="">Click Me</button>
+                <div class="card-buttons">
+                    <button class="card-button" on:click=
+                        move |_| {
+                            approve.dispatch(ApproveTask{admin_task: approval_task.get()});
+                            get_admin_tasks.refetch();
+                        }
+                    >"Approve"</button>
+                    <button class="card-button" on:click=
+                        move |_| {
+                            dismiss.dispatch(DismissTask{admin_task: approval_task.get()});
+                            get_admin_tasks.refetch();
+                        }
+                    >"Deny"</button>
+                </div>
             </div>
         </div>
     }

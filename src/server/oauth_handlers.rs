@@ -3,6 +3,7 @@ use crate::db::db_helper::DbInstance;
 use core::result::Result::Ok;
 use std::sync::Arc;
 
+use actix::Addr;
 use actix_web::{web, HttpResponse, Result};
 use redis::{Client, Commands, RedisResult};
 use tokio::task;
@@ -13,6 +14,8 @@ use crate::{
     AuthorizationCodeResponse, OAuthRedirect, RefreshTokenResponse, RegisterNewClientRequest,
     RegisterNewClientResponse, ReloadOauthClientsResponse,
 };
+
+use super::actors::{CreateClient, OAuthClientEvents};
 
 pub async fn handle_authorization_token(
     authorization_code: String,
@@ -108,7 +111,7 @@ pub async fn handle_refresh_token(
 pub async fn handle_register_oauth_client(
     register_client_request: RegisterNewClientRequest,
     db_instance: &web::Data<DbInstance>,
-    redis_client: &web::Data<Client>,
+    oauth_created_event: web::Data<Addr<OAuthClientEvents>>,
 ) -> Result<RegisterNewClientResponse, AuthError> {
     // Generate a random but short id
     let client_id = generate_token()
@@ -125,7 +128,7 @@ pub async fn handle_register_oauth_client(
         redirect_url,
     } = register_client_request;
 
-    let encrypted_secret = db_instance
+    let oauth_client = db_instance
         .add_new_oauth_client(
             &app_name,
             &contact_email,
@@ -136,15 +139,12 @@ pub async fn handle_register_oauth_client(
         .await
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
-    let mut con = redis_client
-        .get_connection()
-        .expect("Error getting redis connection!");
-
-    () = con
-        .hset("oauth_clients", &client_id, &encrypted_secret)
-        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
-
-    //println!("Implement pubsub model");
+    tokio::spawn(async move {
+        match oauth_created_event.send(CreateClient(oauth_client)).await {
+            Ok(_) => eprintln!("Message sent to recipient"),
+            Err(err) => eprintln!("Failed to communicate with Recipients: {}", err),
+        }
+    });
 
     Ok(RegisterNewClientResponse {
         success: true,

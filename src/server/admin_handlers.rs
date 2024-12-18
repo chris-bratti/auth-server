@@ -4,13 +4,12 @@ use redis::{Client, Commands};
 use crate::{
     db::db_helper::DbInstance,
     server::auth_functions::{check_valid_password, encrypt_string},
-    AuthError, EncryptionKey,
+    AdminTask, AuthError, EncryptionKey,
 };
-
-use super::AdminTaskMessage;
 
 pub async fn handle_signup_admin(
     username: &String,
+    email: &String,
     password: String,
     confirm_password: String,
     db_instance: web::Data<DbInstance>,
@@ -35,7 +34,9 @@ pub async fn handle_signup_admin(
             .expect("Error encrypting username")
     );
 
-    db_instance.create_admin(&username, &password).await?;
+    db_instance
+        .create_admin(&username, &password, email)
+        .await?;
 
     println!("Registered new admin");
 
@@ -44,11 +45,11 @@ pub async fn handle_signup_admin(
 
 pub async fn handle_get_admin_tasks(
     redis_client: web::Data<Client>,
-) -> Result<Vec<AdminTaskMessage>, AuthError> {
+) -> Result<Vec<AdminTask>, AuthError> {
     let mut con = redis_client.get_connection()?;
     let tasks: Vec<String> = con.lrange("admin_tasks", 0, -1)?;
 
-    let admin_tasks: Vec<AdminTaskMessage> = tasks
+    let admin_tasks: Vec<AdminTask> = tasks
         .into_iter()
         .map(|task_string| serde_json::from_str(&task_string))
         .collect::<Result<Vec<_>, _>>()

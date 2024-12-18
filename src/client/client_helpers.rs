@@ -120,12 +120,7 @@ pub async fn get_admin_tasks() -> Result<Vec<AdminTask>, ServerFnError<AuthError
             .to_server_fn_error()
     })?;
 
-    let tasks = handle_get_admin_tasks(redis_client)
+    handle_get_admin_tasks(redis_client)
         .await
-        .map_err(|err| ServerFnError::WrappedServerError(err))?;
-
-    Ok(tasks
-        .into_iter()
-        .map(|task| task.into_admin_task())
-        .collect::<Vec<AdminTask>>())
+        .map_err(|err| ServerFnError::WrappedServerError(err))
 }

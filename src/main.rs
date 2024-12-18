@@ -35,10 +35,11 @@ cfg_if! {
         use env_logger::Env;
         use actix_web_httpauth::extractors::{bearer::BearerAuth, basic::BasicAuth};
         use url::form_urlencoded;
-        use auth_server::server::actors::AdminTaskActor;
         use actix::prelude::*;
         extern crate rand;
-        use rand::Rng;
+        use auth_server::server::actors::{
+            EmailSubscriber, OAuthClientEvents, Subscribe, TaskQueueSubscriber,
+        };
 
         async fn basic_validator(
             req: ServiceRequest,
@@ -122,7 +123,23 @@ async fn main() -> std::io::Result<()> {
     let redis_client =
         web::Data::new(redis::Client::open(redis_connection_string.clone()).unwrap());
 
-    let redis_addr = web::Data::new(AdminTaskActor::new(redis_client.clone()).start());
+    // Initialize Actors and Recipients for the event-driven events
+    let task_queue_subscriber = Subscribe(
+        TaskQueueSubscriber::new(redis_client.clone())
+            .start()
+            .recipient(),
+    );
+
+    let email_subscriber = Subscribe(EmailSubscriber {}.start().recipient());
+    let oauth_client_event = OAuthClientEvents::new().start();
+
+    oauth_client_event.send(email_subscriber).await.unwrap();
+    oauth_client_event
+        .send(task_queue_subscriber)
+        .await
+        .unwrap();
+
+    let new_client_event = web::Data::new(oauth_client_event);
 
     // Leptos connection stuff, sets site address information
     let conf = get_configuration(None).await.unwrap();
@@ -187,7 +204,7 @@ async fn main() -> std::io::Result<()> {
             // Add in the shared connection information
             .app_data(db_instance.clone())
             .app_data(redis_client.clone())
-            .app_data(redis_addr.clone())
+            .app_data(new_client_event.clone())
             // Uses Identity middleware for user sessions, sessions last 1 month
             .wrap(
                 IdentityMiddleware::builder()
@@ -290,13 +307,10 @@ async fn get_token(
 #[post("/clients/register")]
 async fn register_oauth_client(
     register_client_request: web::Json<RegisterNewClientRequest>,
-    admin_actor: web::Data<Addr<AdminTaskActor>>,
+    oauth_created_event: web::Data<Addr<OAuthClientEvents>>,
     request: HttpRequest,
     db_instance: web::Data<DbInstance>,
-    redis_client: web::Data<Client>,
 ) -> Result<HttpResponse, AuthError> {
-    use auth_server::server::AdminTaskMessage;
-
     let admin_key = request
         .headers()
         .get("X-Admin-Key")
@@ -309,42 +323,12 @@ async fn register_oauth_client(
         return Err(AuthError::InvalidCredentials);
     }
 
-    // Clone app name for use in admin task
-    let app_name = register_client_request.app_name.clone();
-
     let response = handle_register_oauth_client(
         register_client_request.into_inner(),
         &db_instance,
-        &redis_client,
+        oauth_created_event,
     )
     .await?;
-
-    // Create new admin task
-    let task_message = AdminTaskMessage {
-        task_type: auth_server::AdminTaskType::ApproveOauthClient {
-            client_id: response.client_id.clone(),
-            app_name,
-        },
-        message: "New OAuth client requires approval".into(),
-        id: rand::thread_rng().gen_range(1..=500),
-    };
-
-    // Send task message to handlers
-    tokio::spawn(async move {
-        match admin_actor.send(task_message).await {
-            Ok(Ok(())) => println!("Task sent successfully"),
-            Ok(Err(err)) => eprintln!("Error sending task: {}", err),
-            Err(err) => eprintln!("Failed to communicate with Redis actor: {}", err),
-        }
-    });
-
-    tokio::spawn(async move {
-        if let Err(err) = handle_reload_oauth_clients(&db_instance, &redis_client).await {
-            eprintln!("Error reloading clients!: {err}");
-        } else {
-            println!("Clients successfully reloaded");
-        }
-    });
 
     Ok(HttpResponse::Ok().json(response))
 }

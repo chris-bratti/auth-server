@@ -4,6 +4,7 @@ diesel::table! {
     admins (id) {
         id -> Int4,
         username -> Text,
+        email -> Text,
         pass_hash -> Text,
         initialized -> Bool,
         two_factor_token -> Nullable<Text>,

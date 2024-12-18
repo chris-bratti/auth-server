@@ -12,13 +12,23 @@ use diesel::select;
 use schema::admins::dsl::*;
 
 impl DbInstance {
-    pub async fn create_admin(&self, uname: &String, pass: &String) -> Result<(), DBError> {
+    pub async fn create_admin(
+        &self,
+        uname: &String,
+        pass: &String,
+        plaintext_email: &String,
+    ) -> Result<(), DBError> {
         let mut connection = self.db_connection.connect()?;
 
         let hashed_pass = hash_string(pass).await.unwrap();
 
+        let encrypted_email = encrypt_string(plaintext_email, crate::EncryptionKey::TwoFactorKey)
+            .await
+            .unwrap();
+
         let new_admin = NewAppAdmin {
             username: uname,
+            email: &encrypted_email,
             pass_hash: &hashed_pass,
             initialized: &false,
             locked: &false,
@@ -114,7 +124,10 @@ impl DbInstance {
     pub fn admin_exists(&self) -> Result<bool, DBError> {
         let mut connection = self.db_connection.connect()?;
 
-        let num_admins: i64 = admins.count().get_result(&mut connection)?;
+        let num_admins: i64 = admins
+            .filter(initialized.eq(true))
+            .count()
+            .get_result(&mut connection)?;
 
         Ok(num_admins > 0)
     }

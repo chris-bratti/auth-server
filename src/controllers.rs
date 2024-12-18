@@ -70,6 +70,13 @@ pub async fn admin_login(
         .map_err(|err| AuthError::from(err))?
         .ok_or_else(|| AuthError::InvalidCredentials)?;
 
+    if !user.initialized {
+        return Err(AuthError::Error(
+            "This admin account has not been initialized, please contact administrator".to_string(),
+        )
+        .to_server_fn_error());
+    }
+
     let _ = handle_login(&username, password, user, req, db_instance)
         .await
         .map_err(|err| err.to_server_fn_error())?;
@@ -81,6 +88,7 @@ pub async fn admin_login(
 pub async fn signup_admin(
     username: String,
     password: String,
+    email: String,
     confirm_password: String,
     admin_key: String,
 ) -> Result<String, ServerFnError<AuthError>> {
@@ -93,7 +101,7 @@ pub async fn signup_admin(
             .to_server_fn_error()
     })?;
 
-    handle_signup_admin(&username, password, confirm_password, db_instance).await?;
+    handle_signup_admin(&username, &email, password, confirm_password, db_instance).await?;
 
     Ok(username)
 }
@@ -136,6 +144,8 @@ pub async fn admin_enable_2fa(
     handle_enable_2fa(&username, admin, otp, two_factor_token, db_instance).await?;
 
     req.get_session().remove("2fa");
+
+    println!("Logging admin in");
 
     Identity::login(&req.extensions(), username.clone().into()).unwrap();
 
@@ -411,6 +421,20 @@ pub async fn change_password(
 pub async fn dismiss_admin_task(admin_task: AdminTask) -> Result<(), ServerFnError<AuthError>> {
     let (_, db_instance) = get_request_data().await?;
 
+    let identity: Option<Identity> = extract().await.map_err(|err| {
+        ServerFnError::WrappedServerError(AuthError::InternalServerError(err.to_string()))
+    })?;
+
+    let user = identity
+        .ok_or_else(|| AuthError::InvalidCredentials)?
+        .id()
+        .unwrap();
+
+    db_instance
+        .get_admin_from_username(&user)
+        .map_err(|err| AuthError::from(err).to_server_fn_error())?
+        .ok_or_else(|| AuthError::InvalidCredentials)?;
+
     let redis_client: web::Data<redis::Client> = extract().await.map_err(|_| {
         AuthError::InternalServerError("Unable to find session data".to_string())
             .to_server_fn_error()
@@ -439,6 +463,20 @@ pub async fn dismiss_admin_task(admin_task: AdminTask) -> Result<(), ServerFnErr
 #[server(ApproveTask, "/api")]
 pub async fn approve_admin_task(admin_task: AdminTask) -> Result<(), ServerFnError<AuthError>> {
     let (_, db_instance) = get_request_data().await?;
+
+    let identity: Option<Identity> = extract().await.map_err(|err| {
+        ServerFnError::WrappedServerError(AuthError::InternalServerError(err.to_string()))
+    })?;
+
+    let user = identity
+        .ok_or_else(|| AuthError::InvalidCredentials)?
+        .id()
+        .unwrap();
+
+    db_instance
+        .get_admin_from_username(&user)
+        .map_err(|err| AuthError::from(err).to_server_fn_error())?
+        .ok_or_else(|| AuthError::InvalidCredentials)?;
 
     let redis_client: web::Data<redis::Client> = extract().await.map_err(|_| {
         AuthError::InternalServerError("Unable to find session data".to_string())

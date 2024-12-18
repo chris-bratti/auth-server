@@ -26,7 +26,7 @@ impl DbInstance {
         c_id: &String,
         c_secret: &String,
         url: &String,
-    ) -> Result<String, DBError> {
+    ) -> Result<OauthClient, DBError> {
         let mut connection = self.db_connection.connect()?;
 
         let encrypted_email = encrypt_string(email, crate::EncryptionKey::SmtpKey)
@@ -49,8 +49,8 @@ impl DbInstance {
         diesel::insert_into(oauth_clients)
             .values(&new_client)
             .returning(OauthClient::as_returning())
-            .get_result(&mut connection)?;
-        Ok(encrypted_secret)
+            .get_result(&mut connection)
+            .map_err(DBError::from)
     }
 
     pub fn delete_oauth_client(&self, c_id: &String) -> Result<usize, DBError> {
@@ -97,14 +97,17 @@ pub mod test_oauth_dbs {
         let url = String::from("https://localhost:8080");
 
         // Create
-        let encrypted_secret = DB_INSTANCE
+        let returned_client = DB_INSTANCE
             .add_new_oauth_client(&name, &email, &c_id, &c_secret, &url)
             .await
             .unwrap();
 
-        let unencrypted_secret = decrypt_string(&encrypted_secret, crate::EncryptionKey::OauthKey)
-            .await
-            .unwrap();
+        let unencrypted_secret = decrypt_string(
+            &returned_client.client_secret,
+            crate::EncryptionKey::OauthKey,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(unencrypted_secret, c_secret);
 
@@ -125,7 +128,7 @@ pub mod test_oauth_dbs {
         assert_eq!(read_client.app_name, name);
         assert_eq!(decrypted_email, email);
         assert_eq!(read_client.client_id, c_id);
-        assert_eq!(read_client.client_secret, encrypted_secret);
+        assert_eq!(read_client.client_secret, returned_client.client_secret);
         assert_eq!(read_client.redirect_url, url);
 
         // Delete

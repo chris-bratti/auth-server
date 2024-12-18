@@ -124,6 +124,71 @@ pub fn generate_welcome_email_body(first_name: &String, verification_token: &Str
     .into_string()
 }
 
+pub fn generate_new_oauth_client_body(
+    app_name: &String,
+    client_id: &String,
+    client_secret: &String,
+    redirect_url: &String,
+) -> String {
+    let auth_app_name = get_env_variable("APP_NAME").expect("APP NAME is unset!");
+    // HTML shamelessly generated with Chat-GPT. Adapted to a maud template
+    html! {
+        head {
+            title {"{OAuth Access}"}
+            style type="text/css" {
+                "body {
+                    font-family: Arial, sans-serif;
+                    margin: 0;
+                    padding: 0;
+                    background-color: #f4f4f4;
+                }
+                .container {
+                    max-width: 600px;
+                    margin: 0 auto;
+                    padding: 20px;
+                    background-color: #fff;
+                    border-radius: 8px;
+                    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                }
+                h1 {
+                    color: #333;
+                }
+                p {
+                    margin-bottom: 20px;
+                    color: #666;
+                }
+                .btn {
+                    display: inline-block;
+                    padding: 10px 20px;
+                    background-color: #007bff;
+                    color: #FEFEFE;
+                    text-decoration: none;
+                    border-radius: 4px;
+                }
+                .btn:hover {
+                    background-color: #0056b3;
+                }"
+            }
+        }
+        body{
+            div class="container" {
+                h1 {"Welcome!"}
+                p{ "Hi " (app_name) "!"}
+                p{"Thank you for requesting OAuth access to " (auth_app_name) "!"}
+                p{"Below are your credentials, be sure to store these in a safe place"}
+                ul{
+                    li{ "Client ID:     " (client_id) }
+                    li{ "Client Secret: " (client_secret) }
+                    li{ "Redirect URL:  " (redirect_url) }
+                }
+                p{ b{"Your account is still pending approval. "} "We'll let you know once your credentials have been approved!"}
+                {p{"For now, check out our " a href={"https://github.com/chris-bratti/auth-server/blob/master/endpoints.md"} { "documentation" } " for instructions on getting integrated with OAuth!"}}
+            }
+        }
+    }
+    .into_string()
+}
+
 pub fn send_email(email: &String, subject: String, email_body: String, first_name: &String) {
     use crate::server::auth_functions::get_env_variable;
 
