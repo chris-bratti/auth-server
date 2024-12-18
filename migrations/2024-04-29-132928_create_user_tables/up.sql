@@ -34,7 +34,8 @@ CREATE TABLE IF NOT EXISTS  oauth_clients (
     contact_email text NOT NULL,
     client_id text NOT NULL UNIQUE,
     client_secret text NOT NULL UNIQUE,
-    redirect_url text NOT NULL
+    redirect_url text NOT NULL,
+    approved boolean NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS refresh_tokens (

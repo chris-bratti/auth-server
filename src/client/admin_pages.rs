@@ -13,7 +13,11 @@ static PASSWORD_PATTERN: &str =
 #[component]
 pub fn AdminPage() -> impl IntoView {
     let admin_result = create_blocking_resource(|| (), |_| async move { admin_exists().await });
-    let admin_exists = move || admin_result.get().is_some() && admin_result.get().unwrap().is_ok();
+    let admin_exists = move || {
+        admin_result.get().is_some()
+            && admin_result.get().unwrap().is_ok()
+            && admin_result.get().unwrap().unwrap()
+    };
 
     let admin_session_result =
         create_blocking_resource(|| (), |_| async move { admin_logged_in().await });
@@ -36,7 +40,7 @@ pub fn AdminPage() -> impl IntoView {
                         }}
                     }.into_view()
                 }else{
-                    view! {<AdminSignup/>}.into_view()
+                    view! {<AdminSignup admin_session_result=admin_session_result/>}.into_view()
                 }
             }
            }
@@ -187,7 +191,9 @@ pub fn AdminLogin(
 }
 
 #[component]
-pub fn AdminSignup() -> impl IntoView {
+pub fn AdminSignup(
+    admin_session_result: Resource<(), Result<bool, ServerFnError<AuthError>>>,
+) -> impl IntoView {
     // Uses the SignUp server function
     let signup = create_server_action::<SignupAdmin>();
     // Used to fetch any errors returned from the server
@@ -208,7 +214,7 @@ pub fn AdminSignup() -> impl IntoView {
                     if admin.get().is_some(){
                         view! {
                             <div class="container">
-                                <AdminEnableTwoFactor admin=admin/>
+                                <AdminEnableTwoFactor admin=admin admin_session_result=admin_session_result/>
                             </div>
                         }
                             .into_view()
@@ -340,7 +346,10 @@ pub fn AdminSignup() -> impl IntoView {
 }
 
 #[component]
-pub fn AdminEnableTwoFactor(admin: ReadSignal<Option<String>>) -> impl IntoView {
+pub fn AdminEnableTwoFactor(
+    admin: ReadSignal<Option<String>>,
+    admin_session_result: Resource<(), Result<bool, ServerFnError<AuthError>>>,
+) -> impl IntoView {
     let qr_code = create_resource(
         || (),
         move |_| async move { admin_generate_2fa(admin.get().unwrap()).await },
@@ -387,6 +396,7 @@ pub fn AdminEnableTwoFactor(admin: ReadSignal<Option<String>>) -> impl IntoView 
                         if value().is_some() && value().unwrap().is_err() {
                             view! {<p>{value().unwrap().unwrap()}</p>}.into_view()
                         }else{
+                            admin_session_result.refetch();
                             view! {}.into_view()
                         }
                     }}
@@ -413,7 +423,7 @@ pub fn AdminHomepage() -> impl IntoView {
             {move ||{
                  if admin_tasks_fetched() {
                      view! {
-                         <AdminTasks admin_tasks=get_admin_tasks.get().unwrap().unwrap()/>
+                         <AdminTasks admin_tasks=get_admin_tasks.get().unwrap().unwrap() get_admin_tasks=get_admin_tasks/>
                      }.into_view()
                  }else{
                      view! {}.into_view()
@@ -425,7 +435,10 @@ pub fn AdminHomepage() -> impl IntoView {
 }
 
 #[component]
-pub fn AdminTasks(admin_tasks: Vec<AdminTask>) -> impl IntoView {
+pub fn AdminTasks(
+    admin_tasks: Vec<AdminTask>,
+    get_admin_tasks: Resource<(), Result<Vec<AdminTask>, ServerFnError<AuthError>>>,
+) -> impl IntoView {
     let task_list = RwSignal::from(admin_tasks);
     view! {
         <h1>Admin Tasks</h1>
@@ -433,9 +446,10 @@ pub fn AdminTasks(admin_tasks: Vec<AdminTask>) -> impl IntoView {
                 <For
                     each=move || task_list.get()
                     key=|admin_task| admin_task.id
-                    children=move |message| {
+                    children=move |task| {
+                        let task = RwSignal::from(task);
                         view! {
-                            <AdminTaskCard admin_task=message/>
+                            <AdminTaskCard admin_task=task get_admin_tasks=get_admin_tasks/>
                         }
                     }
                 />
@@ -444,23 +458,33 @@ pub fn AdminTasks(admin_tasks: Vec<AdminTask>) -> impl IntoView {
 }
 
 #[component]
-pub fn AdminTaskCard(admin_task: AdminTask) -> impl IntoView {
-    //let logout = create_server_action::<Logout>();
-    let AdminTask {
-        task_type,
-        message,
-        id: _,
-    } = admin_task.into();
-    let body = task_type.to_display();
+pub fn AdminTaskCard(
+    admin_task: RwSignal<AdminTask>,
+    get_admin_tasks: Resource<(), Result<Vec<AdminTask>, ServerFnError<AuthError>>>,
+) -> impl IntoView {
+    let approve = create_server_action::<ApproveTask>();
+    let dismiss = create_server_action::<DismissTask>();
+    let approval_task = admin_task.clone();
     view! {
         <div class="card">
             <div class="card-content">
-                <div class="card-title">{message}</div>
-                <div class="card-description">{body}</div>
+                <div class="card-title">{admin_task.get().message}</div>
+                <div class="card-description">{admin_task.get().task_type.to_display()}</div>
             </div>
             <div class="card-action">
-                //<button class="card-button" on:click=move |_| logout.dispatch(Logout{})>"Logout"</button>
-                <button class="card-button" onclick="">Click Me</button>
+                <button class="card-button" on:click=
+                    move |_| {
+                        approve.dispatch(ApproveTask{admin_task: approval_task.get()});
+                        get_admin_tasks.refetch();
+                    }
+                >"Approve"</button>
+                <button class="card-button" on:click=
+                    move |_| {
+                        dismiss.dispatch(DismissTask{admin_task: approval_task.get()});
+                        get_admin_tasks.refetch();
+                    }
+                >"Deny"</button>
+                //<button class="card-button" onclick="">Click Me</button>
             </div>
         </div>
     }

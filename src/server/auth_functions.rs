@@ -26,6 +26,8 @@ use regex::Regex;
 
 use lazy_static::lazy_static;
 
+use super::oauth_handlers::handle_reload_oauth_clients;
+
 lazy_static! {
     static ref JWT_SECRET: String = get_env_variable("JWT_KEY").expect("JWT_KEY is unset!");
 }
@@ -333,6 +335,17 @@ where
         }
     }
     Ok(db_user.is_locked())
+}
+
+pub async fn approve_oauth_client(
+    client_id: &String,
+    redis_client: &web::Data<Client>,
+    db_instance: &web::Data<DbInstance>,
+) -> Result<(), AuthError> {
+    db_instance.approve_oauth_client(&client_id)?;
+    handle_reload_oauth_clients(&db_instance, &redis_client).await?;
+
+    Ok(())
 }
 
 #[cfg(test)]

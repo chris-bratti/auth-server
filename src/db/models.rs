@@ -54,6 +54,7 @@ pub struct OauthClient {
     pub client_id: String,
     pub client_secret: String,
     pub redirect_url: String,
+    pub approved: bool,
 }
 
 #[derive(Queryable, Selectable, Identifiable, Associations, Debug, PartialEq)]
@@ -135,6 +136,7 @@ pub struct NewOauthClient<'a> {
     pub client_id: &'a str,
     pub client_secret: &'a str,
     pub redirect_url: &'a str,
+    pub approved: &'a bool,
 }
 
 use diesel::{r2d2::ConnectionManager, PgConnection};

@@ -21,6 +21,7 @@ diesel::table! {
         client_id -> Text,
         client_secret -> Text,
         redirect_url -> Text,
+        approved -> Bool,
     }
 }
 

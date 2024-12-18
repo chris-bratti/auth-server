@@ -9,6 +9,7 @@ impl DbInstance {
     pub fn get_oauth_clients(&self) -> Result<Option<Vec<OauthClient>>, DBError> {
         let mut connection = self.db_connection.connect()?;
         let clients = oauth_clients
+            .filter(approved.eq(true))
             .select(OauthClient::as_select())
             .load(&mut connection)
             .optional()
@@ -41,6 +42,7 @@ impl DbInstance {
             client_id: c_id,
             client_secret: &encrypted_secret,
             redirect_url: url,
+            approved: &false,
         };
 
         diesel::insert_into(oauth_clients)
@@ -55,6 +57,16 @@ impl DbInstance {
         diesel::delete(oauth_clients.filter(client_id.eq(c_id)))
             .execute(&mut connection)
             .map_err(DBError::from)
+    }
+
+    pub fn approve_oauth_client(&self, c_id: &String) -> Result<(), DBError> {
+        let mut connection = self.db_connection.connect()?;
+
+        diesel::update(oauth_clients.filter(client_id.eq(c_id)))
+            .set(approved.eq(true))
+            .execute(&mut connection)?;
+
+        Ok(())
     }
 }
 

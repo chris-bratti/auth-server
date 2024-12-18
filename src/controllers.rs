@@ -1,3 +1,4 @@
+use crate::AdminTask;
 use crate::AuthError;
 use cfg_if::cfg_if;
 use leptos::server;
@@ -24,6 +25,8 @@ cfg_if! {
         use crate::client::client_helpers;
         use crate::get_env_variable;
         use crate::server::admin_handlers::handle_signup_admin;
+        use redis::{Commands};
+        use crate::approve_oauth_client;
     }
 }
 
@@ -131,8 +134,6 @@ pub async fn admin_enable_2fa(
     handle_enable_2fa(username, admin, otp, two_factor_token, db_instance).await?;
 
     req.get_session().remove("2fa");
-
-    leptos_actix::redirect("/test");
 
     Ok(true)
 }
@@ -398,6 +399,65 @@ pub async fn change_password(
         db_instance,
     )
     .await?;
+
+    Ok(())
+}
+
+#[server(DismissTask, "/api")]
+pub async fn dismiss_admin_task(admin_task: AdminTask) -> Result<(), ServerFnError<AuthError>> {
+    let (_, db_instance) = get_request_data().await?;
+
+    let redis_client: web::Data<redis::Client> = extract().await.map_err(|_| {
+        AuthError::InternalServerError("Unable to find session data".to_string())
+            .to_server_fn_error()
+    })?;
+
+    let mut con = redis_client.get_connection().unwrap();
+
+    match &admin_task.task_type {
+        crate::AdminTaskType::ApproveOauthClient {
+            app_name: _,
+            client_id,
+        } => db_instance
+            .delete_oauth_client(&client_id)
+            .map_err(|err| AuthError::from(err)),
+    }?;
+
+    let admin_string = serde_json::to_string(&admin_task).unwrap();
+
+    let () = con
+        .lrem("admin_tasks", 1, admin_string)
+        .map_err(|err| AuthError::from(err))?;
+
+    Ok(())
+}
+
+#[server(ApproveTask, "/api")]
+pub async fn approve_admin_task(admin_task: AdminTask) -> Result<(), ServerFnError<AuthError>> {
+    let (_, db_instance) = get_request_data().await?;
+
+    let redis_client: web::Data<redis::Client> = extract().await.map_err(|_| {
+        AuthError::InternalServerError("Unable to find session data".to_string())
+            .to_server_fn_error()
+    })?;
+
+    let mut con = redis_client.get_connection().unwrap();
+
+    match &admin_task.task_type {
+        crate::AdminTaskType::ApproveOauthClient {
+            app_name: _,
+            client_id,
+        } => approve_oauth_client(client_id, &redis_client, &db_instance).await,
+    }
+    .map_err(|err| err.to_server_fn_error())?;
+
+    let admin_string = serde_json::to_string(&admin_task).unwrap();
+
+    let () = con
+        .lrem("admin_tasks", 1, admin_string)
+        .map_err(|err| AuthError::from(err))?;
+
+    println!("Admin task approved!");
 
     Ok(())
 }
