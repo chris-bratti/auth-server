@@ -1,3 +1,6 @@
+use thiserror::Error;
+
+pub mod admins_table;
 pub mod db_helper;
 pub mod models;
 pub mod oauth_clients_table;
@@ -6,3 +9,50 @@ pub mod reset_token_table;
 pub mod schema;
 pub mod users_db;
 pub mod verification_tokens_table;
+
+#[derive(Error, Debug)]
+pub enum DBError {
+    #[error("User not found: {0}")]
+    NotFound(String),
+    #[error("Internal server error: {0}")]
+    InternalServerError(#[from] diesel::result::Error),
+    #[error("Error: {0}")]
+    Error(String),
+    #[error("Database connection error: {0}")]
+    ConnectionError(#[from] diesel::ConnectionError),
+    #[error("Token invalid or expired")]
+    TokenExpired,
+}
+
+use diesel::{r2d2::ConnectionManager, PgConnection};
+use r2d2::{Pool, PooledConnection};
+
+use crate::server::auth_functions::get_env_variable;
+
+pub struct DbConnection {
+    connection_pool: Pool<ConnectionManager<PgConnection>>,
+}
+
+impl DbConnection {
+    pub fn connect(&self) -> Result<PooledConnection<ConnectionManager<PgConnection>>, DBError> {
+        self.connection_pool
+            .get()
+            .map_err(|_| DBError::Error("Error establishing connection!".to_string()))
+    }
+
+    pub fn new() -> Self {
+        println!("Establishing database connection");
+        let database_url = get_env_variable("DATABASE_URL").unwrap();
+        let manager = ConnectionManager::<PgConnection>::new(&database_url);
+        let connection_pool = Pool::builder()
+            .test_on_check_out(true)
+            .max_size(15)
+            .build(manager)
+            .unwrap();
+        DbConnection { connection_pool }
+    }
+
+    pub fn test_instance() {
+        todo!()
+    }
+}

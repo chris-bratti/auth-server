@@ -1,6 +1,7 @@
 use core::{option::Option::None, result::Result::Ok};
 use std::{collections::HashMap, env};
 
+use chrono::{DateTime, Utc};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 
 use actix_web::{web, Result};
@@ -24,6 +25,8 @@ use totp_rs::{Algorithm, Secret, TOTP};
 use regex::Regex;
 
 use lazy_static::lazy_static;
+
+use super::{oauth_handlers::handle_reload_oauth_clients, DBError, DatabaseUser};
 
 lazy_static! {
     static ref JWT_SECRET: String = get_env_variable("JWT_KEY").expect("JWT_KEY is unset!");
@@ -64,22 +67,13 @@ pub async fn create_2fa_for_user(username: &String) -> Result<(String, String), 
     Ok((qr_code, token))
 }
 
-pub async fn get_totp(username: &String, db: &web::Data<DbInstance>) -> Result<String, AuthError> {
-    let token = db
-        .get_user_2fa_token(&username)
+pub async fn get_totp(username: &String, two_factor_token: &String) -> Result<String, AuthError> {
+    let decrypted_token = decrypt_string(&two_factor_token, EncryptionKey::TwoFactorKey)
         .await
-        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
-    match token {
-        Some(token) => {
-            let decrypted_token = decrypt_string(&token, EncryptionKey::TwoFactorKey)
-                .await
-                .expect("Error decrypting string!");
-            get_totp_config(&username, &decrypted_token)
-                .generate_current()
-                .map_err(|err| AuthError::InternalServerError(err.to_string()))
-        }
-        None => Err(AuthError::TOTPError),
-    }
+        .expect("Error decrypting string!");
+    get_totp_config(&username, &decrypted_token)
+        .generate_current()
+        .map_err(|err| AuthError::InternalServerError(err.to_string()))
 }
 
 /// Hash password with Argon2
@@ -294,7 +288,11 @@ pub async fn validate_pending_token(
         return Err(AuthError::InvalidCredentials);
     }
 
-    let user_exists = db.does_user_exist(&token.sub).await?;
+    let user_exists = if db.does_user_exist(&token.sub).await? {
+        true
+    } else {
+        db.does_admin_exist(&token.sub).await?
+    };
 
     if token.scope == scope && user_exists {
         Ok(())
@@ -317,12 +315,48 @@ pub async fn load_oauth_clients(
     Ok(clients)
 }
 
+pub async fn is_user_locked<T>(db_user: &T) -> Result<bool, DBError>
+where
+    T: DatabaseUser,
+{
+    if db_user.is_locked() {
+        let timestamp: DateTime<Utc> =
+            DateTime::from(db_user.last_failed_attempt().expect("No timestamp!"));
+
+        // Get the current time
+        let current_time = Utc::now();
+
+        // Calculate the difference in minutes
+        let minutes_since_last_attempt =
+            current_time.signed_duration_since(timestamp).num_minutes();
+
+        if minutes_since_last_attempt > 10 {
+            return Ok(false);
+        }
+    }
+    Ok(db_user.is_locked())
+}
+
+pub async fn approve_oauth_client(
+    client_id: &String,
+    redis_client: &web::Data<Client>,
+    db_instance: &web::Data<DbInstance>,
+) -> Result<(), AuthError> {
+    db_instance.approve_oauth_client(&client_id)?;
+    handle_reload_oauth_clients(&db_instance, &redis_client).await?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod test_auth {
 
     use core::{assert_eq, assert_ne};
 
-    use crate::{check_valid_password, decrypt_string, verify_hash, EncryptionKey};
+    use crate::{
+        server::auth_functions::{check_valid_password, decrypt_string, verify_hash},
+        EncryptionKey,
+    };
 
     use super::{encrypt_string, get_totp_config, hash_string};
 

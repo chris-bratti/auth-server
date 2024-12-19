@@ -35,6 +35,11 @@ cfg_if! {
         use env_logger::Env;
         use actix_web_httpauth::extractors::{bearer::BearerAuth, basic::BasicAuth};
         use url::form_urlencoded;
+        use actix::prelude::*;
+        extern crate rand;
+        use auth_server::server::actors::{
+            EmailSubscriber, OAuthClientEvents, Subscribe, TaskQueueSubscriber,
+        };
 
         async fn basic_validator(
             req: ServiceRequest,
@@ -118,6 +123,24 @@ async fn main() -> std::io::Result<()> {
     let redis_client =
         web::Data::new(redis::Client::open(redis_connection_string.clone()).unwrap());
 
+    // Initialize Actors and Recipients for the event-driven events
+    let task_queue_subscriber = Subscribe(
+        TaskQueueSubscriber::new(redis_client.clone())
+            .start()
+            .recipient(),
+    );
+
+    let email_subscriber = Subscribe(EmailSubscriber {}.start().recipient());
+    let oauth_client_event = OAuthClientEvents::new().start();
+
+    oauth_client_event.send(email_subscriber).await.unwrap();
+    oauth_client_event
+        .send(task_queue_subscriber)
+        .await
+        .unwrap();
+
+    let new_client_event = web::Data::new(oauth_client_event);
+
     // Leptos connection stuff, sets site address information
     let conf = get_configuration(None).await.unwrap();
     let addr = conf.leptos_options.site_addr;
@@ -155,8 +178,10 @@ async fn main() -> std::io::Result<()> {
         let site_root = &leptos_options.site_root;
         // Cors protection for the leptos server functions
         let cors = Cors::default()
-            .allowed_origin("https://localhost:3000")
-            .allowed_methods(vec!["GET", "POST"])
+            .allowed_origin("localhost:3000")
+            .block_on_origin_mismatch(true)
+            .allow_any_method()
+            .allow_any_header()
             .max_age(3600);
         App::new()
             // Logger middleware
@@ -176,11 +201,11 @@ async fn main() -> std::io::Result<()> {
             // serve the favicon from /favicon.ico
             .service(favicon)
             .leptos_routes(leptos_options.to_owned(), routes.to_owned(), App)
-            .service(web::scope("/api").wrap(cors))
             .app_data(web::Data::new(leptos_options.to_owned()))
             // Add in the shared connection information
             .app_data(db_instance.clone())
             .app_data(redis_client.clone())
+            .app_data(new_client_event.clone())
             // Uses Identity middleware for user sessions, sessions last 1 month
             .wrap(
                 IdentityMiddleware::builder()
@@ -283,9 +308,9 @@ async fn get_token(
 #[post("/clients/register")]
 async fn register_oauth_client(
     register_client_request: web::Json<RegisterNewClientRequest>,
+    oauth_created_event: web::Data<Addr<OAuthClientEvents>>,
     request: HttpRequest,
     db_instance: web::Data<DbInstance>,
-    redis_client: web::Data<Client>,
 ) -> Result<HttpResponse, AuthError> {
     let admin_key = request
         .headers()
@@ -302,19 +327,11 @@ async fn register_oauth_client(
     let response = handle_register_oauth_client(
         register_client_request.into_inner(),
         &db_instance,
-        &redis_client,
+        oauth_created_event,
     )
     .await?;
 
-    tokio::spawn(async move {
-        if let Err(err) = handle_reload_oauth_clients(&db_instance, &redis_client).await {
-            eprintln!("Error reloading clients!: {err}");
-        } else {
-            println!("Clients successfully reloaded");
-        }
-    });
-
-    Ok(response)
+    Ok(HttpResponse::Ok().json(response))
 }
 
 // Internal endpoint to reload oauth clients into redis cache

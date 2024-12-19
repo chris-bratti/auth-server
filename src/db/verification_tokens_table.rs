@@ -1,10 +1,10 @@
 use super::db_helper::DbInstance;
 use super::models::NewDBVerificationToken;
 use super::schema::verification_tokens;
+use super::DBError;
 use crate::db::models::{DBUser, DBVerificationToken};
 use crate::db::schema::verification_tokens::user_id;
 use crate::db::schema::{self};
-use crate::DBError;
 use diesel::{prelude::*, select};
 use schema::users::dsl::*;
 use std::time::Duration;

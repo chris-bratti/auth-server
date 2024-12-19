@@ -1,12 +1,14 @@
 use crate::db::models::{DBUser, NewDBUser};
 use crate::db::schema::{self};
-use crate::{decrypt_string, encrypt_string, DBError, EncryptionKey, UserInfo};
+use crate::server::auth_functions::{decrypt_string, encrypt_string};
+use crate::{EncryptionKey, UserInfo};
 use chrono::{DateTime, Utc};
 use diesel::{prelude::*, select};
 use schema::users::dsl::*;
 
 use super::db_helper::DbInstance;
 use super::schema::users;
+use super::DBError;
 
 impl DbInstance {
     pub async fn create_db_user(&self, user_info: UserInfo) -> Result<DBUser, DBError> {
@@ -126,15 +128,19 @@ impl DbInstance {
         Ok(())
     }
 
-    pub fn set_2fa_token_for_db_user(
+    pub async fn set_2fa_token_for_db_user(
         &self,
         uname: &String,
         tf_token: &String,
     ) -> Result<(), DBError> {
         let mut connection = self.db_connection.connect()?;
 
+        let encrypted_token = encrypt_string(tf_token, EncryptionKey::TwoFactorKey)
+            .await
+            .unwrap();
+
         diesel::update(users.filter(username.eq(uname)))
-            .set(two_factor_token.eq(tf_token))
+            .set(two_factor_token.eq(encrypted_token))
             .returning(DBUser::as_returning())
             .get_result(&mut connection)?;
 
