@@ -173,8 +173,8 @@ pub fn generate_new_oauth_client_body(
         body{
             div class="container" {
                 h1 {"Welcome!"}
-                p{ "Hi " (app_name) "!"}
-                p{"Thank you for requesting OAuth access to " (auth_app_name) "!"}
+                p{ "Hi " (app_name) ","}
+                p{"Thank you for requesting OAuth access to " (auth_app_name) "."}
                 p{"Below are your credentials, be sure to store these in a safe place"}
                 ul{
                     li{ "Client ID:     " (client_id) }

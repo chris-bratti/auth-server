@@ -295,8 +295,8 @@ pub struct ReloadOauthClientsResponse {
 
 #[derive(leptos::Params, PartialEq, Deserialize, Debug)]
 pub struct OAuthRequest {
-    pub client_id: String,
-    pub state: String,
+    pub client_id: Option<String>,
+    pub state: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]

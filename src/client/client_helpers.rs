@@ -75,11 +75,11 @@ pub async fn admin_exists() -> Result<bool, ServerFnError<AuthError>> {
 #[server]
 pub async fn user_server_side_redirect(
     username: String,
-    client_id: String,
-    state: String,
+    client_id: Option<String>,
+    state: Option<String>,
 ) -> Result<(), ServerFnError<AuthError>> {
     // If not redirected from another app, go to user page
-    if client_id.is_empty() && state.is_empty() {
+    if client_id.is_none() && state.is_none() {
         leptos_actix::redirect("/user");
     } else {
         // If part of OAuth flow, redirect to the client's redirect_url
@@ -91,7 +91,8 @@ pub async fn user_server_side_redirect(
             authorization_code,
             state,
             redirect_url: url,
-        } = handle_request_oauth_token(client_id, username, state, &redis_client).await?;
+        } = handle_request_oauth_token(client_id.unwrap(), username, state.unwrap(), &redis_client)
+            .await?;
 
         leptos_actix::redirect(format!("{url}?code={authorization_code}&state={state}").as_str());
     }

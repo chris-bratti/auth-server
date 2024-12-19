@@ -178,8 +178,10 @@ async fn main() -> std::io::Result<()> {
         let site_root = &leptos_options.site_root;
         // Cors protection for the leptos server functions
         let cors = Cors::default()
-            .allowed_origin("https://localhost:3000")
-            .allowed_methods(vec!["GET", "POST"])
+            .allowed_origin("localhost:3000")
+            .block_on_origin_mismatch(true)
+            .allow_any_method()
+            .allow_any_header()
             .max_age(3600);
         App::new()
             // Logger middleware
@@ -199,7 +201,6 @@ async fn main() -> std::io::Result<()> {
             // serve the favicon from /favicon.ico
             .service(favicon)
             .leptos_routes(leptos_options.to_owned(), routes.to_owned(), App)
-            .service(web::scope("/api").wrap(cors))
             .app_data(web::Data::new(leptos_options.to_owned()))
             // Add in the shared connection information
             .app_data(db_instance.clone())

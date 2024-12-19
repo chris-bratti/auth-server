@@ -27,7 +27,7 @@ pub struct CreateClient(pub OauthClient);
 #[rtype(result = "()")]
 pub struct Subscribe(pub Recipient<OAuthClientCreated>);
 
-/// Actor that provides order shipped event subscriptions
+/// Actor that provides client created event subscriptions
 pub struct OAuthClientEvents {
     subscribers: Vec<Recipient<OAuthClientCreated>>,
 }
@@ -54,7 +54,7 @@ impl OAuthClientEvents {
     }
 }
 
-/// Subscribe to shipment event
+/// Subscribe to client event
 impl Handler<Subscribe> for OAuthClientEvents {
     type Result = ();
 
@@ -63,7 +63,7 @@ impl Handler<Subscribe> for OAuthClientEvents {
     }
 }
 
-/// Subscribe to ship message
+/// Subscribe to client message
 impl Handler<CreateClient> for OAuthClientEvents {
     type Result = ();
 
@@ -112,7 +112,7 @@ impl Handler<OAuthClientCreated> for EmailSubscriber {
     }
 }
 
-/// SMS Subscriber
+/// Redis subscriber
 pub struct TaskQueueSubscriber {
     redis_client: web::Data<Client>,
 }

@@ -184,8 +184,8 @@ pub async fn verify_admin_otp(
 pub async fn login(
     username: String,
     password: String,
-    client_id: String,
-    state: String,
+    client_id: Option<String>,
+    state: Option<String>,
 ) -> Result<String, ServerFnError<AuthError>> {
     let db_instance: web::Data<DbInstance> = extract().await.map_err(|_| {
         AuthError::InternalServerError("Unable to find session data".to_string())
@@ -256,8 +256,7 @@ async fn signup(
     if client_id.is_none() && state.is_none() {
         leptos_actix::redirect("/user");
     } else {
-        client_helpers::user_server_side_redirect(username, client_id.unwrap(), state.unwrap())
-            .await?;
+        client_helpers::user_server_side_redirect(username, client_id, state).await?;
     }
 
     Ok(())
@@ -267,8 +266,8 @@ async fn signup(
 async fn verify_otp(
     username: String,
     otp: String,
-    client_id: String,
-    state: String,
+    client_id: Option<String>,
+    state: Option<String>,
 ) -> Result<(), ServerFnError<AuthError>> {
     let (req, db_instance) = get_request_data().await?;
 
@@ -292,7 +291,7 @@ async fn verify_otp(
     req.get_session().remove("otp");
 
     // If not redirected from another app, go to user page
-    if client_id.is_empty() && state.is_empty() {
+    if client_id.is_none() && state.is_none() {
         leptos_actix::redirect("/user");
     } else {
         client_helpers::user_server_side_redirect(username, client_id, state).await?;
