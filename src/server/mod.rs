@@ -76,13 +76,11 @@ impl ResponseError for AuthError {
 
         eprintln!("{error_message}");
 
-        // Build the JSON response
         let body = serde_json::json!({
             "success": false,
             "message": error_message
         });
 
-        // Customize the HTTP status code if needed
         let status_code = match *self {
             AuthError::InvalidCredentials => StatusCode::UNAUTHORIZED,
             AuthError::InternalServerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
@@ -93,6 +91,7 @@ impl ResponseError for AuthError {
             AuthError::TOTPError => StatusCode::UNAUTHORIZED,
             AuthError::Error(_) => StatusCode::INTERNAL_SERVER_ERROR,
             AuthError::InvalidRequest(_) => StatusCode::BAD_REQUEST,
+            AuthError::Forbidden => StatusCode::FORBIDDEN,
         };
 
         HttpResponse::build(status_code).json(body)

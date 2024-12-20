@@ -63,6 +63,7 @@ pub enum AuthError {
     TOTPError,
     AccountLocked,
     InvalidRequest(String),
+    Forbidden,
 }
 
 impl From<aes_gcm::Error> for AuthError {
@@ -102,6 +103,9 @@ impl fmt::Display for AuthError {
             AuthError::InvalidRequest(error) => {
                 write!(f, "Invalid auth request: {error}")
             }
+            AuthError::Forbidden => {
+                write!(f, "Client not allowed to access this resource")
+            }
         }
     }
 }
@@ -136,6 +140,9 @@ impl fmt::Debug for AuthError {
             }
             AuthError::InvalidRequest(error) => {
                 write!(f, "Invalid request: {error}")
+            }
+            AuthError::Forbidden => {
+                write!(f, "Client not allowed to access this resource")
             }
         }
     }

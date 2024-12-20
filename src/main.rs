@@ -96,8 +96,7 @@ cfg_if! {
                 if !path_pattern.is_match(req.path()) {
                     // Verifies source matches site address
                     if req.connection_info().host().to_string() != SITE_ADDR.to_string() {
-                        eprintln!("Invalid source");
-                        return Box::pin(async move { Err(Error::from(AuthError::InvalidCredentials)) });
+                        return Box::pin(async move { Err(Error::from(AuthError::Forbidden)) });
                     }
                 }
 
