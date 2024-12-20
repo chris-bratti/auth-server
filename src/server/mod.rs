@@ -64,9 +64,17 @@ impl From<jsonwebtoken::errors::Error> for AuthError {
     }
 }
 
+impl From<actix_web::Error> for AuthError {
+    fn from(err: actix_web::Error) -> Self {
+        AuthError::InternalServerError(err.to_string())
+    }
+}
+
 impl ResponseError for AuthError {
     fn error_response(&self) -> HttpResponse {
         let error_message = format!("{}", self);
+
+        eprintln!("{error_message}");
 
         // Build the JSON response
         let body = serde_json::json!({
