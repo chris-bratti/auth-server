@@ -1,5 +1,4 @@
 use cfg_if::cfg_if;
-use regex::Regex;
 
 cfg_if! {
     if #[cfg(feature = "ssr")] {
@@ -48,6 +47,8 @@ cfg_if! {
             dev::{forward_ready, Service, ServiceResponse, Transform},
         };
         use futures_util::future::LocalBoxFuture;
+
+        use regex::Regex;
 
         use lazy_static::lazy_static;
 
