@@ -1,20 +1,9 @@
+#![allow(async_fn_in_trait)]
 use core::{fmt, str::FromStr};
 use leptos_router::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use cfg_if::cfg_if;
-
-cfg_if! {
-    if #[cfg(feature = "ssr")] {
-        use actix_web::{http::StatusCode, HttpResponse, ResponseError};
-        use thiserror::Error;
-    use leptos::ServerFnError;
-    use redis::RedisError;
-    use server::auth_functions::*;
-    use db::models::DBUser;
-    }
-}
 pub mod client;
 pub mod controllers;
 
@@ -37,6 +26,32 @@ pub fn hydrate() {
     mount_to_body(App);
 }
 
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct AdminTask {
+    pub task_type: AdminTaskType,
+    pub message: String,
+    pub id: usize,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub enum AdminTaskType {
+    ApproveOauthClient { app_name: String, client_id: String },
+}
+
+impl AdminTaskType {
+    pub fn to_display(&self) -> String {
+        match self {
+            AdminTaskType::ApproveOauthClient {
+                app_name,
+                client_id,
+            } => format!(
+                "New OAuth application {} with ID {} requires approval",
+                &app_name, &client_id
+            ),
+        }
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub enum AuthError {
     InvalidCredentials,
@@ -48,67 +63,12 @@ pub enum AuthError {
     TOTPError,
     AccountLocked,
     InvalidRequest(String),
-}
-
-#[cfg(feature = "ssr")]
-impl AuthError {
-    pub fn to_server_fn_error(self) -> ServerFnError<AuthError> {
-        ServerFnError::WrappedServerError(self)
-    }
-}
-
-#[cfg(feature = "ssr")]
-impl From<RedisError> for AuthError {
-    fn from(err: RedisError) -> Self {
-        AuthError::InternalServerError(err.to_string())
-    }
-}
-
-#[cfg(feature = "ssr")]
-impl From<DBError> for AuthError {
-    fn from(err: DBError) -> Self {
-        AuthError::InternalServerError(err.to_string())
-    }
+    Forbidden,
 }
 
 impl From<aes_gcm::Error> for AuthError {
     fn from(err: aes_gcm::Error) -> Self {
         AuthError::InternalServerError(err.to_string())
-    }
-}
-
-#[cfg(feature = "ssr")]
-impl From<jsonwebtoken::errors::Error> for AuthError {
-    fn from(err: jsonwebtoken::errors::Error) -> Self {
-        AuthError::InternalServerError(err.to_string())
-    }
-}
-
-#[cfg(feature = "ssr")]
-impl ResponseError for AuthError {
-    fn error_response(&self) -> HttpResponse {
-        let error_message = format!("{}", self);
-
-        // Build the JSON response
-        let body = serde_json::json!({
-            "success": false,
-            "message": error_message
-        });
-
-        // Customize the HTTP status code if needed
-        let status_code = match *self {
-            AuthError::InvalidCredentials => StatusCode::UNAUTHORIZED,
-            AuthError::InternalServerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            AuthError::InvalidToken => StatusCode::UNAUTHORIZED,
-            AuthError::PasswordConfirmationError => StatusCode::UNAUTHORIZED,
-            AuthError::InvalidPassword => StatusCode::UNAUTHORIZED,
-            AuthError::AccountLocked => StatusCode::UNAUTHORIZED,
-            AuthError::TOTPError => StatusCode::UNAUTHORIZED,
-            AuthError::Error(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            AuthError::InvalidRequest(_) => StatusCode::BAD_REQUEST,
-        };
-
-        HttpResponse::build(status_code).json(body)
     }
 }
 
@@ -142,6 +102,9 @@ impl fmt::Display for AuthError {
             }
             AuthError::InvalidRequest(error) => {
                 write!(f, "Invalid auth request: {error}")
+            }
+            AuthError::Forbidden => {
+                write!(f, "Client not allowed to access this resource")
             }
         }
     }
@@ -178,6 +141,9 @@ impl fmt::Debug for AuthError {
             AuthError::InvalidRequest(error) => {
                 write!(f, "Invalid request: {error}")
             }
+            AuthError::Forbidden => {
+                write!(f, "Client not allowed to access this resource")
+            }
         }
     }
 }
@@ -189,40 +155,11 @@ impl FromStr for AuthError {
     }
 }
 
-#[cfg(feature = "ssr")]
-#[derive(Error, Debug)]
-pub enum DBError {
-    #[error("User not found: {0}")]
-    NotFound(String),
-    #[error("Internal server error: {0}")]
-    InternalServerError(#[from] diesel::result::Error),
-    #[error("Error: {0}")]
-    Error(String),
-    #[error("Database connection error: {0}")]
-    ConnectionError(#[from] diesel::ConnectionError),
-    #[error("Token invalid or expired")]
-    TokenExpired,
-}
-
 pub enum EncryptionKey {
     SmtpKey,
     TwoFactorKey,
     LoggerKey,
     OauthKey,
-}
-
-#[cfg(feature = "ssr")]
-impl EncryptionKey {
-    pub fn get(&self) -> String {
-        let key = match self {
-            EncryptionKey::SmtpKey => "SMTP_ENCRYPTION_KEY",
-            EncryptionKey::TwoFactorKey => "TWO_FACTOR_KEY",
-            EncryptionKey::LoggerKey => "LOG_KEY",
-            EncryptionKey::OauthKey => "OAUTH_ENCRYPTION_KEY",
-        };
-
-        get_env_variable(key).expect("Encryption key is unset!")
-    }
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
@@ -243,20 +180,6 @@ impl From<User> for UserBasicInfo {
             username: user.username,
             two_factor: user.two_factor,
             verified: user.verified,
-        }
-    }
-}
-
-#[cfg(feature = "ssr")]
-impl From<DBUser> for User {
-    fn from(db_user: DBUser) -> Self {
-        User {
-            first_name: db_user.first_name,
-            last_name: db_user.last_name,
-            username: db_user.username,
-            two_factor: db_user.two_factor,
-            verified: db_user.verified,
-            email: db_user.email,
         }
     }
 }
@@ -379,8 +302,8 @@ pub struct ReloadOauthClientsResponse {
 
 #[derive(leptos::Params, PartialEq, Deserialize, Debug)]
 pub struct OAuthRequest {
-    pub client_id: String,
-    pub state: String,
+    pub client_id: Option<String>,
+    pub state: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]

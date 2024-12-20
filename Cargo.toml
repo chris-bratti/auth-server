@@ -28,7 +28,7 @@ argon2 = "0.5.3"
 lazy_static = { version = "1.5.0", optional = true }
 regex = { version = "1.11.1", optional = true }
 chrono = "0.4.39"
-rand = "0.8.5"
+rand = { version = "0.8.5", optional = true, features = ["std"] }
 lettre ={version = "0.11.11", optional= true}
 maud = {version = "0.26.0", optional=true}
 aes-gcm = "0.10.3"
@@ -37,7 +37,7 @@ totp-rs = { version = "5.6.0", features = ["qr"], optional = true }
 tokio = { version = "1.41.1", features = ["full"], optional = true }
 jsonwebtoken = {version = "9.3.0", optional = true }
 env_logger = {version = "0.11.5"}
-log = {version = "0.4.22"}
+log = "0.4.22"
 thiserror = {version = "2.0.7", optional = true}
 redis = {version = "0.27.6", optional = true}
 openssl = { version = "0.10", optional = true }
@@ -48,6 +48,8 @@ futures-util = "0.3.31"
 actix-cors = {version ="0.7.0", optional = true}
 actix-web-httpauth = {version = "0.8.2", optional = true}
 url = { version = "2.5.4", optional = true }
+actix-rt = {version = "2.10.0", optional = true}
+actix = { version = "0.13.5", optional = true }
 
 [features]
 csr = ["leptos/csr", "leptos_meta/csr", "leptos_router/csr"]
@@ -78,7 +80,10 @@ ssr = [
   "dep:r2d2",
   "dep:actix-cors",
   "dep:actix-web-httpauth",
-  "dep:url"
+  "dep:url",
+  "dep:actix-rt",
+  "dep:actix",
+  "dep:rand"
 ]
 dotenvy = ["dep:dotenvy"]
 true = ["dep:true"]
@@ -111,7 +116,7 @@ style-file = "style/main.scss"
 # Optional. Env: LEPTOS_ASSETS_DIR.
 assets-dir = "assets"
 # The IP and port (ex: 127.0.0.1:3000) where the server serves the content. Use it in your server setup.
-site-addr = "127.0.0.1:3000"
+site-addr = "0.0.0.0:3000"
 # The port to use for automatic reload monitoring
 reload-port = 3001
 # [Optional] Command to use when running end2end tests. It will run in the end2end dir.

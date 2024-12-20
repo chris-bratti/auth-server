@@ -1,12 +1,12 @@
 use crate::db::models::{DBResetToken, DBUser, NewDBResetToken};
 use crate::db::schema::password_reset_tokens::user_id;
 use crate::db::schema::{self, password_reset_tokens};
-use crate::DBError;
 use diesel::{prelude::*, select};
 use schema::users::dsl::*;
 use std::time::Duration;
 
 use super::db_helper::DbInstance;
+use super::DBError;
 
 impl DbInstance {
     pub fn get_reset_token_from_db(&self, uname: &String) -> Result<Option<DBResetToken>, DBError> {

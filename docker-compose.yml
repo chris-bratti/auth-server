@@ -25,6 +25,7 @@ services:
       JWT_KEY: "${JWT_KEY}"
       REDIS_KEY: "${REDIS_KEY}"
       OAUTH_ENCRYPTION_KEY: "${OAUTH_ENCRYPTION_KEY}"
+      SITE_ADDR: "${SITE_ADDR}"
     restart: unless-stopped
     depends_on:
       redis:

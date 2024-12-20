@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     first_name text NOT NULL,
     last_name text NOT NULL,
-    username text NOT NULL,
+    username text NOT NULL UNIQUE,
     pass_hash text NOT NULL,
     email text NOT NULL,
     verified boolean NOT NULL,
@@ -34,7 +34,8 @@ CREATE TABLE IF NOT EXISTS  oauth_clients (
     contact_email text NOT NULL,
     client_id text NOT NULL UNIQUE,
     client_secret text NOT NULL UNIQUE,
-    redirect_url text NOT NULL
+    redirect_url text NOT NULL,
+    approved boolean NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS refresh_tokens (

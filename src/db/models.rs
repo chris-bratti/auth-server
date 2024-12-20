@@ -4,6 +4,31 @@ use crate::db::schema::*;
 use diesel::prelude::*;
 
 #[derive(Queryable, Selectable, Identifiable, Debug)]
+#[diesel(table_name = crate::db::schema::admins)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct AppAdmin {
+    pub id: i32,
+    pub username: String,
+    pub email: String,
+    pub pass_hash: String,
+    pub initialized: bool,
+    pub two_factor_token: Option<String>,
+    pub locked: bool,
+    pub pass_retries: Option<i32>,
+    pub last_failed_attempt: Option<SystemTime>,
+}
+
+#[derive(Insertable, Debug)]
+#[diesel(table_name = admins)]
+pub struct NewAppAdmin<'a> {
+    pub username: &'a str,
+    pub email: &'a str,
+    pub pass_hash: &'a str,
+    pub initialized: &'a bool,
+    pub locked: &'a bool,
+}
+
+#[derive(Queryable, Selectable, Identifiable, Debug)]
 #[diesel(table_name = crate::db::schema::users)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct DBUser {
@@ -31,6 +56,7 @@ pub struct OauthClient {
     pub client_id: String,
     pub client_secret: String,
     pub redirect_url: String,
+    pub approved: bool,
 }
 
 #[derive(Queryable, Selectable, Identifiable, Associations, Debug, PartialEq)]
@@ -112,37 +138,5 @@ pub struct NewOauthClient<'a> {
     pub client_id: &'a str,
     pub client_secret: &'a str,
     pub redirect_url: &'a str,
-}
-
-use diesel::{r2d2::ConnectionManager, PgConnection};
-use r2d2::{Pool, PooledConnection};
-
-use crate::{get_env_variable, DBError};
-
-pub struct DbConnection {
-    connection_pool: Pool<ConnectionManager<PgConnection>>,
-}
-
-impl DbConnection {
-    pub fn connect(&self) -> Result<PooledConnection<ConnectionManager<PgConnection>>, DBError> {
-        self.connection_pool
-            .get()
-            .map_err(|_| DBError::Error("Error establishing connection!".to_string()))
-    }
-
-    pub fn new() -> Self {
-        println!("Establishing database connection");
-        let database_url = get_env_variable("DATABASE_URL").unwrap();
-        let manager = ConnectionManager::<PgConnection>::new(&database_url);
-        let connection_pool = Pool::builder()
-            .test_on_check_out(true)
-            .max_size(15)
-            .build(manager)
-            .unwrap();
-        DbConnection { connection_pool }
-    }
-
-    pub fn test_instance() {
-        todo!()
-    }
+    pub approved: &'a bool,
 }

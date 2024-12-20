@@ -35,6 +35,81 @@ cfg_if! {
         use env_logger::Env;
         use actix_web_httpauth::extractors::{bearer::BearerAuth, basic::BasicAuth};
         use url::form_urlencoded;
+        use actix::prelude::*;
+        extern crate rand;
+        use auth_server::server::actors::{
+            EmailSubscriber, OAuthClientEvents, Subscribe, TaskQueueSubscriber,
+        };
+
+        use std::future::{ready, Ready};
+
+        use actix_web::{
+            dev::{forward_ready, Service, ServiceResponse, Transform},
+        };
+        use futures_util::future::LocalBoxFuture;
+
+        use regex::Regex;
+
+        use lazy_static::lazy_static;
+
+        lazy_static! {
+            static ref SITE_ADDR: String = get_env_variable("SITE_ADDR").unwrap();
+        }
+
+        pub struct VerifySource;
+
+        impl<S, B> Transform<S, ServiceRequest> for VerifySource
+        where
+            S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error>,
+            S::Future: 'static,
+            B: 'static,
+        {
+            type Response = ServiceResponse<B>;
+            type Error = Error;
+            type InitError = ();
+            type Transform = VerifySourceMiddleware<S>;
+            type Future = Ready<Result<Self::Transform, Self::InitError>>;
+
+            fn new_transform(&self, service: S) -> Self::Future {
+                ready(Ok(VerifySourceMiddleware { service }))
+            }
+        }
+
+        pub struct VerifySourceMiddleware<S> {
+            service: S,
+        }
+
+        impl<S, B> Service<ServiceRequest> for VerifySourceMiddleware<S>
+        where
+            S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error>,
+            S::Future: 'static,
+            B: 'static,
+        {
+            type Response = ServiceResponse<B>;
+            type Error = Error;
+            type Future = LocalBoxFuture<'static, Result<Self::Response, Self::Error>>;
+
+            forward_ready!(service);
+
+            fn call(&self, req: ServiceRequest) -> Self::Future {
+                let path_pattern = Regex::new(r"^\/v0\/.+$").unwrap();
+                // Only applies to leptos server functions
+                if !path_pattern.is_match(req.path()) {
+                    // Verifies source matches site address
+                    if req.connection_info().host().to_string() != SITE_ADDR.to_string() {
+                        return Box::pin(async move { Err(Error::from(AuthError::Forbidden)) });
+                    }
+                }
+
+                let fut = self.service.call(req);
+
+                Box::pin(async move {
+                    let res = fut.await?;
+
+                    Ok(res)
+                })
+            }
+        }
 
         async fn basic_validator(
             req: ServiceRequest,
@@ -106,7 +181,6 @@ cfg_if! {
 #[cfg(feature = "ssr")]
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    use actix_cors::Cors;
     use actix_web_httpauth::middleware::HttpAuthentication;
 
     let redis_connection_string =
@@ -117,6 +191,24 @@ async fn main() -> std::io::Result<()> {
 
     let redis_client =
         web::Data::new(redis::Client::open(redis_connection_string.clone()).unwrap());
+
+    // Initialize Actors and Recipients for the event-driven events
+    let task_queue_subscriber = Subscribe(
+        TaskQueueSubscriber::new(redis_client.clone())
+            .start()
+            .recipient(),
+    );
+
+    let email_subscriber = Subscribe(EmailSubscriber {}.start().recipient());
+    let oauth_client_event = OAuthClientEvents::new().start();
+
+    oauth_client_event.send(email_subscriber).await.unwrap();
+    oauth_client_event
+        .send(task_queue_subscriber)
+        .await
+        .unwrap();
+
+    let new_client_event = web::Data::new(oauth_client_event);
 
     // Leptos connection stuff, sets site address information
     let conf = get_configuration(None).await.unwrap();
@@ -153,22 +245,32 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         let leptos_options = &conf.leptos_options;
         let site_root = &leptos_options.site_root;
-        // Cors protection for the leptos server functions
-        let cors = Cors::default()
-            .allowed_origin("https://localhost:3000")
-            .allowed_methods(vec!["GET", "POST"])
-            .max_age(3600);
         App::new()
             // Logger middleware
             .wrap(Logger::default())
             .wrap(Logger::new("%a %{User-Agent}i"))
             .wrap(actix_web::middleware::Logger::default())
-            // Routes needing bearer auth validation
+            // External facing routes
             .service(
-                web::scope("/user")
-                    .wrap(HttpAuthentication::bearer(bearer_validator))
-                    .route("/info", web::get().to(get_user_info)),
+                web::scope("/v0")
+                    .service(
+                        web::scope("/users")
+                            .wrap(HttpAuthentication::bearer(bearer_validator))
+                            .route("/info", web::get().to(get_user_info)),
+                    )
+                    .service(
+                        web::scope("/oauth")
+                            .wrap(HttpAuthentication::basic(basic_validator))
+                            .route("/token", web::post().to(get_token)),
+                    )
+                    .service(register_oauth_client)
+                    .service(load_clients_into_redis),
             )
+            .app_data(db_instance.clone())
+            .app_data(redis_client.clone())
+            .app_data(new_client_event.clone())
+            // Uses Identity middleware for user sessions, sessions last 1 month
+            .app_data(web::Data::new(leptos_options.to_owned()))
             // serve JS/WASM/CSS from `pkg`
             .service(Files::new("/pkg", format!("{site_root}/pkg")))
             // serve other assets from the `assets` directory
@@ -176,12 +278,7 @@ async fn main() -> std::io::Result<()> {
             // serve the favicon from /favicon.ico
             .service(favicon)
             .leptos_routes(leptos_options.to_owned(), routes.to_owned(), App)
-            .service(web::scope("/api").wrap(cors))
-            .app_data(web::Data::new(leptos_options.to_owned()))
-            // Add in the shared connection information
-            .app_data(db_instance.clone())
-            .app_data(redis_client.clone())
-            // Uses Identity middleware for user sessions, sessions last 1 month
+            .wrap(VerifySource)
             .wrap(
                 IdentityMiddleware::builder()
                     .login_deadline(Some(Duration::new(259200, 0)))
@@ -196,14 +293,6 @@ async fn main() -> std::io::Result<()> {
                             .session_ttl(actix_web::cookie::time::Duration::weeks(2)),
                     )
                     .build(),
-            )
-            .service(register_oauth_client)
-            .service(load_clients_into_redis)
-            // Routes needing basic auth validation
-            .service(
-                web::scope("/oauth")
-                    .wrap(HttpAuthentication::basic(basic_validator))
-                    .route("/token", web::post().to(get_token)),
             )
     })
     .bind_openssl(&addr, ssl_builder)?
@@ -283,9 +372,9 @@ async fn get_token(
 #[post("/clients/register")]
 async fn register_oauth_client(
     register_client_request: web::Json<RegisterNewClientRequest>,
+    oauth_created_event: web::Data<Addr<OAuthClientEvents>>,
     request: HttpRequest,
     db_instance: web::Data<DbInstance>,
-    redis_client: web::Data<Client>,
 ) -> Result<HttpResponse, AuthError> {
     let admin_key = request
         .headers()
@@ -302,19 +391,11 @@ async fn register_oauth_client(
     let response = handle_register_oauth_client(
         register_client_request.into_inner(),
         &db_instance,
-        &redis_client,
+        oauth_created_event,
     )
     .await?;
 
-    tokio::spawn(async move {
-        if let Err(err) = handle_reload_oauth_clients(&db_instance, &redis_client).await {
-            eprintln!("Error reloading clients!: {err}");
-        } else {
-            println!("Clients successfully reloaded");
-        }
-    });
-
-    Ok(response)
+    Ok(HttpResponse::Ok().json(response))
 }
 
 // Internal endpoint to reload oauth clients into redis cache

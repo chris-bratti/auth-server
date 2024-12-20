@@ -1,7 +1,8 @@
 use super::db_helper::DbInstance;
 use super::models::{NewOauthClient, OauthClient};
+use super::DBError;
 use crate::db::schema::{self};
-use crate::{encrypt_string, DBError};
+use crate::server::auth_functions::encrypt_string;
 use diesel::prelude::*;
 use schema::oauth_clients::dsl::*;
 
@@ -9,6 +10,7 @@ impl DbInstance {
     pub fn get_oauth_clients(&self) -> Result<Option<Vec<OauthClient>>, DBError> {
         let mut connection = self.db_connection.connect()?;
         let clients = oauth_clients
+            .filter(approved.eq(true))
             .select(OauthClient::as_select())
             .load(&mut connection)
             .optional()
@@ -24,7 +26,7 @@ impl DbInstance {
         c_id: &String,
         c_secret: &String,
         url: &String,
-    ) -> Result<String, DBError> {
+    ) -> Result<OauthClient, DBError> {
         let mut connection = self.db_connection.connect()?;
 
         let encrypted_email = encrypt_string(email, crate::EncryptionKey::SmtpKey)
@@ -41,13 +43,14 @@ impl DbInstance {
             client_id: c_id,
             client_secret: &encrypted_secret,
             redirect_url: url,
+            approved: &false,
         };
 
         diesel::insert_into(oauth_clients)
             .values(&new_client)
             .returning(OauthClient::as_returning())
-            .get_result(&mut connection)?;
-        Ok(encrypted_secret)
+            .get_result(&mut connection)
+            .map_err(DBError::from)
     }
 
     pub fn delete_oauth_client(&self, c_id: &String) -> Result<usize, DBError> {
@@ -56,6 +59,16 @@ impl DbInstance {
             .execute(&mut connection)
             .map_err(DBError::from)
     }
+
+    pub fn approve_oauth_client(&self, c_id: &String) -> Result<(), DBError> {
+        let mut connection = self.db_connection.connect()?;
+
+        diesel::update(oauth_clients.filter(client_id.eq(c_id)))
+            .set(approved.eq(true))
+            .execute(&mut connection)?;
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -63,7 +76,10 @@ pub mod test_oauth_dbs {
 
     use serial_test::serial;
 
-    use crate::{db::db_helper::DbInstance, decrypt_string, generate_token};
+    use crate::{
+        db::db_helper::DbInstance,
+        server::auth_functions::{decrypt_string, generate_token},
+    };
 
     use lazy_static::lazy_static;
 
@@ -81,16 +97,22 @@ pub mod test_oauth_dbs {
         let url = String::from("https://localhost:8080");
 
         // Create
-        let encrypted_secret = DB_INSTANCE
+        let returned_client = DB_INSTANCE
             .add_new_oauth_client(&name, &email, &c_id, &c_secret, &url)
             .await
             .unwrap();
 
-        let unencrypted_secret = decrypt_string(&encrypted_secret, crate::EncryptionKey::OauthKey)
-            .await
-            .unwrap();
+        let unencrypted_secret = decrypt_string(
+            &returned_client.client_secret,
+            crate::EncryptionKey::OauthKey,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(unencrypted_secret, c_secret);
+
+        //Approve client
+        DB_INSTANCE.approve_oauth_client(&c_id).unwrap();
 
         // Read
         let clients = DB_INSTANCE.get_oauth_clients().unwrap().unwrap();
@@ -109,7 +131,7 @@ pub mod test_oauth_dbs {
         assert_eq!(read_client.app_name, name);
         assert_eq!(decrypted_email, email);
         assert_eq!(read_client.client_id, c_id);
-        assert_eq!(read_client.client_secret, encrypted_secret);
+        assert_eq!(read_client.client_secret, returned_client.client_secret);
         assert_eq!(read_client.redirect_url, url);
 
         // Delete

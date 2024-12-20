@@ -19,7 +19,7 @@ pub fn Login() -> impl IntoView {
             query
                 .as_ref()
                 .map(|query: &OAuthRequest| query.client_id.clone())
-                .unwrap_or("".to_string())
+                .unwrap_or(None)
         })
     });
     let state = Signal::derive(move || {
@@ -27,7 +27,7 @@ pub fn Login() -> impl IntoView {
             query
                 .as_ref()
                 .map(|query| query.state.clone())
-                .unwrap_or("".to_string())
+                .unwrap_or(None)
         })
     });
 
@@ -62,7 +62,7 @@ pub fn Auth() -> impl IntoView {
             query
                 .as_ref()
                 .map(|query: &OAuthRequest| query.client_id.clone())
-                .unwrap_or("".to_string())
+                .unwrap_or(None)
         })
     });
     let state = Signal::derive(move || {
@@ -70,7 +70,7 @@ pub fn Auth() -> impl IntoView {
             query
                 .as_ref()
                 .map(|query| query.state.clone())
-                .unwrap_or("".to_string())
+                .unwrap_or(None)
         })
     });
 
@@ -180,9 +180,9 @@ pub fn Auth() -> impl IntoView {
                                     "Forgot Password?"
                                 </A>
                                 {move || {
-                                    if !client_id().is_empty() || !state().is_empty(){
+                                    if !client_id().is_none() || !state().is_none(){
                                         view! {
-                                            <A href=format!("/signup?client_id={}&state={}", client_id(), state()) class="forgot-password-btn">
+                                            <A href=format!("/signup?client_id={}&state={}", client_id().unwrap(), state().unwrap()) class="forgot-password-btn">
                                             "Don't have an account? Sign up!"
                                             </A>
                                         }
@@ -250,7 +250,7 @@ pub fn Signup() -> impl IntoView {
             query
                 .as_ref()
                 .map(|query: &OAuthRequest| query.client_id.clone())
-                .unwrap_or("".to_string())
+                .unwrap_or(None)
         })
     });
     let state = Signal::derive(move || {
@@ -258,7 +258,7 @@ pub fn Signup() -> impl IntoView {
             query
                 .as_ref()
                 .map(|query| query.state.clone())
-                .unwrap_or("".to_string())
+                .unwrap_or(None)
         })
     });
     // Uses the SignUp server function
