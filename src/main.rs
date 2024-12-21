@@ -51,6 +51,7 @@ cfg_if! {
         use regex::Regex;
 
         use lazy_static::lazy_static;
+        use auth_server::HtmlError;
 
         lazy_static! {
             static ref SITE_ADDR: String = get_env_variable("SITE_ADDR").unwrap();
@@ -97,7 +98,7 @@ cfg_if! {
                 if !path_pattern.is_match(req.path()) {
                     // Verifies source matches site address
                     if req.connection_info().host().to_string() != SITE_ADDR.to_string() {
-                        return Box::pin(async move { Err(Error::from(AuthError::Forbidden)) });
+                        return Box::pin(async move { Err(Error::from(HtmlError::Forbidden)) });
                     }
                 }
 

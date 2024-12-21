@@ -5,13 +5,14 @@ use actix_web::http::StatusCode;
 use actix_web::{web, HttpResponse, ResponseError};
 use auth_functions::get_env_variable;
 use leptos::ServerFnError;
+use maud::html;
 use redis::RedisError;
 use serde::{Deserialize, Serialize};
 
 use crate::db::db_helper::DbInstance;
 use crate::db::models::{AppAdmin, DBUser};
 use crate::db::DBError;
-use crate::{AdminTask, AdminTaskType, EncryptionKey, User};
+use crate::{AdminTask, AdminTaskType, EncryptionKey, HtmlError, User};
 
 use crate::AuthError;
 
@@ -67,6 +68,57 @@ impl From<jsonwebtoken::errors::Error> for AuthError {
 impl From<actix_web::Error> for AuthError {
     fn from(err: actix_web::Error) -> Self {
         AuthError::InternalServerError(err.to_string())
+    }
+}
+
+impl ResponseError for HtmlError {
+    fn error_response(&self) -> HttpResponse<actix_web::body::BoxBody> {
+        let message = format!("{self}");
+        let html_body = html! {
+            head {
+                title {"Forbidden"}
+                style type="text/css" {
+                    "body {
+                        font-family: Arial, sans-serif;
+                        margin: 0;
+                        padding: 0;
+                        background-color: #1e1e1e;
+                    }
+                    .container {
+                        max-width: 600px;
+                        margin: 0 auto;
+                        padding: 20px;
+                        background-color: #444444;
+                        border-radius: 8px;
+                        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                    }
+                    h1 {
+                        color: #fff;
+                    }
+                    p {
+                        margin-bottom: 20px;
+                        color: #fff;
+                    }"
+                }
+            }
+            body{
+                div class="container" {
+                    h1 {"Forbidden"}
+                    p{ (message) }
+                }
+            }
+        }
+        .into_string();
+
+        let status_code = match *self {
+            HtmlError::Forbidden => StatusCode::FORBIDDEN,
+        };
+
+        HttpResponse::build(status_code).body(html_body)
+    }
+
+    fn status_code(&self) -> StatusCode {
+        StatusCode::INTERNAL_SERVER_ERROR
     }
 }
 

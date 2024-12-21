@@ -53,6 +53,27 @@ impl AdminTaskType {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
+pub enum HtmlError {
+    Forbidden,
+}
+
+impl fmt::Display for HtmlError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            HtmlError::Forbidden => write!(f, "Client not allowed to access this resource"),
+        }
+    }
+}
+
+impl fmt::Debug for HtmlError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Forbidden => write!(f, "Client not allowed to access this resource"),
+        }
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
 pub enum AuthError {
     InvalidCredentials,
     InternalServerError(String),
@@ -205,38 +226,6 @@ impl GrantType {
             "authorization_code" => GrantType::AuthorizationCode,
             "refresh_token" => GrantType::RefreshToken,
             _ => GrantType::Invalid,
-        }
-    }
-}
-
-pub enum AuthType {
-    Login,
-    Signup,
-    VerifyUser,
-    ResetPassword,
-    RequestPasswordReset,
-    ChangePassword,
-    VerifyOtp,
-    Generate2Fa,
-    Enable2Fa,
-    Logout,
-    Invalid,
-}
-
-impl AuthType {
-    pub fn from(req_type: &str) -> AuthType {
-        match req_type {
-            "login" => AuthType::Login,
-            "signup" => AuthType::Signup,
-            "verify_user" => AuthType::VerifyUser,
-            "reset_password" => AuthType::ResetPassword,
-            "request_password_reset" => AuthType::RequestPasswordReset,
-            "change_password" => AuthType::ChangePassword,
-            "verify_otp" => AuthType::VerifyOtp,
-            "generate_2fa" => AuthType::Generate2Fa,
-            "enable_2fa" => AuthType::Enable2Fa,
-            "logout" => AuthType::Logout,
-            _ => AuthType::Invalid,
         }
     }
 }
