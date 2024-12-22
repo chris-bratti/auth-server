@@ -2,16 +2,10 @@ use core::{option::Option::None, result::Result::Ok};
 use std::{collections::HashMap, env};
 
 use chrono::{DateTime, Utc};
-use encryption_libs::EncryptionKey;
+use encryption_libs::{decrypt_string, EncryptionKey};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 
 use actix_web::{web, Result};
-use aes_gcm::{
-    aead::{Aead, AeadCore, KeyInit},
-    Aes256Gcm,
-    Key, // Or `Aes128Gcm`
-    Nonce,
-};
 use argon2::{
     password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
@@ -70,7 +64,6 @@ pub async fn create_2fa_for_user(username: &String) -> Result<(String, String), 
 
 pub async fn get_totp(username: &String, two_factor_token: &String) -> Result<String, AuthError> {
     let decrypted_token = decrypt_string(&two_factor_token, EncryptionKey::TwoFactorKey)
-        .await
         .expect("Error decrypting string!");
     get_totp_config(&username, &decrypted_token)
         .generate_current()
@@ -152,48 +145,6 @@ pub fn verify_confirmation_token(
         .map_err(|_| AuthError::InvalidToken)?;
 
     verify_hash(confirmation_token, &verification_hash).map_err(|_| AuthError::InvalidToken)
-}
-
-pub async fn encrypt_string(
-    data: &String,
-    encryption_key: EncryptionKey,
-) -> Result<String, aes_gcm::Error> {
-    let encryption_key = encryption_key.get();
-
-    let key = Key::<Aes256Gcm>::from_slice(&encryption_key.as_bytes());
-
-    let cipher = Aes256Gcm::new(&key);
-    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
-    let ciphertext = cipher.encrypt(&nonce, data.as_bytes())?;
-
-    let mut encrypted_data: Vec<u8> = nonce.to_vec();
-    encrypted_data.extend_from_slice(&ciphertext);
-
-    let output = hex::encode(encrypted_data);
-    Ok(output)
-}
-
-pub async fn decrypt_string(
-    encrypted: &String,
-    encryption_key: EncryptionKey,
-) -> Result<String, aes_gcm::Error> {
-    let encryption_key = encryption_key.get();
-
-    let encrypted_data = hex::decode(encrypted).expect("failed to decode hex string into vec");
-
-    let key = Key::<Aes256Gcm>::from_slice(encryption_key.as_bytes());
-
-    // 12 digit nonce is prepended to encrypted data. Split nonce from encrypted email
-    let (nonce_arr, ciphered_data) = encrypted_data.split_at(12);
-    let nonce = Nonce::from_slice(nonce_arr);
-
-    let cipher = Aes256Gcm::new(key);
-
-    let plaintext = cipher
-        .decrypt(nonce, ciphered_data)
-        .expect("failed to decrypt data");
-
-    Ok(String::from_utf8(plaintext).expect("failed to convert vector of bytes to string"))
 }
 
 pub async fn generate_oauth_token(
@@ -354,11 +305,11 @@ mod test_auth {
 
     use core::{assert_eq, assert_ne};
 
-    use encryption_libs::EncryptionKey;
+    use encryption_libs::{decrypt_string, encrypt_string, EncryptionKey};
 
-    use crate::server::auth_functions::{check_valid_password, decrypt_string, verify_hash};
+    use crate::server::auth_functions::{check_valid_password, verify_hash};
 
-    use super::{encrypt_string, get_totp_config, hash_string};
+    use super::{get_totp_config, hash_string};
 
     #[tokio::test]
     async fn test_password_hashing() {
@@ -382,14 +333,12 @@ mod test_auth {
     #[tokio::test]
     async fn test_email_encryption() {
         let email = String::from("test@test.com");
-        let encrypted_email = encrypt_string(&email, EncryptionKey::SmtpKey)
-            .await
-            .expect("There was an error encrypting");
+        let encrypted_email =
+            encrypt_string(&email, EncryptionKey::SmtpKey).expect("There was an error encrypting");
 
         assert_ne!(encrypted_email, email);
 
         let decrypted_email = decrypt_string(&encrypted_email, EncryptionKey::SmtpKey)
-            .await
             .expect("There was an error decrypting");
 
         assert_eq!(email, decrypted_email);
@@ -399,13 +348,11 @@ mod test_auth {
     async fn test_log_encryption() {
         let username = String::from("testuser123");
         let encrypted_username = encrypt_string(&username, EncryptionKey::LoggerKey)
-            .await
             .expect("There was an error encrypting!");
 
         assert_ne!(encrypted_username, username);
 
         let decrypted_username = decrypt_string(&encrypted_username, EncryptionKey::LoggerKey)
-            .await
             .expect("There was an error decrypting!");
 
         assert_eq!(username, decrypted_username);

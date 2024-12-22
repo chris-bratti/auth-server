@@ -1,11 +1,9 @@
 use actix_web::web;
-use encryption_libs::EncryptionKey;
+use encryption_libs::{encrypt_string, EncryptionKey};
 use redis::{Client, Commands};
 
 use crate::{
-    db::db_helper::DbInstance,
-    server::auth_functions::{check_valid_password, encrypt_string},
-    AdminTask, AuthError,
+    db::db_helper::DbInstance, server::auth_functions::check_valid_password, AdminTask, AuthError,
 };
 
 pub async fn handle_signup_admin(
@@ -30,9 +28,7 @@ pub async fn handle_signup_admin(
 
     println!(
         "Creating new admin: {}",
-        encrypt_string(&username, EncryptionKey::LoggerKey)
-            .await
-            .expect("Error encrypting username")
+        encrypt_string(&username, EncryptionKey::LoggerKey).expect("Error encrypting username")
     );
 
     db_instance

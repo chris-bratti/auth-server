@@ -1,10 +1,9 @@
 use crate::db::models::{DBUser, NewDBUser};
 use crate::db::schema::{self};
-use crate::server::auth_functions::{decrypt_string, encrypt_string};
 use crate::UserInfo;
 use chrono::{DateTime, Utc};
 use diesel::{prelude::*, select};
-use encryption_libs::EncryptionKey;
+use encryption_libs::{decrypt_string, encrypt_string, EncryptionKey};
 use schema::users::dsl::*;
 
 use super::db_helper::DbInstance;
@@ -15,9 +14,7 @@ impl DbInstance {
     pub async fn create_db_user(&self, user_info: UserInfo) -> Result<DBUser, DBError> {
         let mut conn = self.db_connection.connect()?;
 
-        let encrypted_email = encrypt_string(&user_info.email, EncryptionKey::SmtpKey)
-            .await
-            .unwrap();
+        let encrypted_email = encrypt_string(&user_info.email, EncryptionKey::SmtpKey).unwrap();
 
         let new_user = NewDBUser {
             first_name: &user_info.first_name,
@@ -49,9 +46,7 @@ impl DbInstance {
             .map_err(DBError::from)?;
 
         if let Some(mut db_user) = user_result {
-            db_user.email = decrypt_string(&db_user.email, EncryptionKey::SmtpKey)
-                .await
-                .unwrap();
+            db_user.email = decrypt_string(&db_user.email, EncryptionKey::SmtpKey).unwrap();
             Ok(Some(db_user))
         } else {
             Ok(None)
@@ -136,9 +131,7 @@ impl DbInstance {
     ) -> Result<(), DBError> {
         let mut connection = self.db_connection.connect()?;
 
-        let encrypted_token = encrypt_string(tf_token, EncryptionKey::TwoFactorKey)
-            .await
-            .unwrap();
+        let encrypted_token = encrypt_string(tf_token, EncryptionKey::TwoFactorKey).unwrap();
 
         diesel::update(users.filter(username.eq(uname)))
             .set(two_factor_token.eq(encrypted_token))

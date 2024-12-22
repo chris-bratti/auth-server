@@ -1,5 +1,4 @@
 use cfg_if::cfg_if;
-use encryption_libs::EncryptionKey;
 
 cfg_if! {
     if #[cfg(feature = "ssr")] {
@@ -28,7 +27,7 @@ cfg_if! {
         use actix_session::{config::PersistentSession, storage::RedisSessionStore, SessionMiddleware};
         use redis::{Client, Commands};
         use actix_files::Files;
-        use auth_server::{app::*, server::auth_functions::{validate_oauth_token, decrypt_string}};
+        use auth_server::{app::*, server::auth_functions::{validate_oauth_token}};
         use leptos::*;
         use leptos_actix::{generate_route_list, LeptosRoutes};
         use actix_web::{web, App, HttpServer, middleware::Logger, dev::{ServiceRequest},
@@ -55,6 +54,7 @@ cfg_if! {
         use auth_server::HtmlError;
 
         use encryption_libs::Encryptable;
+        use encryption_libs::{decrypt_string, EncryptionKey};
 
         lazy_static! {
             static ref SITE_ADDR: String = get_env_variable("SITE_ADDR").unwrap();
@@ -132,7 +132,7 @@ cfg_if! {
 
             let stored_key = stored_key.ok_or_else(|| AuthError::InvalidToken).unwrap();
 
-            if secret.to_string() != decrypt_string(&stored_key, EncryptionKey::OauthKey).await.unwrap() {
+            if secret.to_string() != decrypt_string(&stored_key, EncryptionKey::OauthKey).unwrap() {
                 return Err((actix_web::error::ErrorUnauthorized("Invalid client info"), req));
             }
 
@@ -186,7 +186,7 @@ cfg_if! {
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     use actix_web_httpauth::middleware::HttpAuthentication;
-    use auth_server::{TestEncryption, TestThing};
+    use auth_server::TestEncryption;
     use encryption_libs::EncryptableString;
 
     let redis_connection_string =

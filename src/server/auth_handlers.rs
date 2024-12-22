@@ -6,7 +6,7 @@ use actix_session::SessionExt;
 use actix_web::{
     http::StatusCode, post, web, HttpMessage, HttpRequest, HttpResponse, Responder, Result,
 };
-use encryption_libs::EncryptionKey;
+use encryption_libs::{decrypt_string, encrypt_string, EncryptionKey};
 use tokio::task;
 
 use crate::server::smtp::{generate_welcome_email_body, send_email};
@@ -27,9 +27,8 @@ pub async fn handle_login<T>(
 where
     T: DatabaseUser,
 {
-    let encrypted_username: String = encrypt_string(&username, EncryptionKey::LoggerKey)
-        .await
-        .expect("Error encrypting username");
+    let encrypted_username: String =
+        encrypt_string(&username, EncryptionKey::LoggerKey).expect("Error encrypting username");
 
     println!("Logging in user: {}", encrypted_username);
 
@@ -105,9 +104,7 @@ pub async fn handle_signup(
 
     println!(
         "Signing up user: {}",
-        encrypt_string(&username, EncryptionKey::LoggerKey)
-            .await
-            .expect("Error encrypting username")
+        encrypt_string(&username, EncryptionKey::LoggerKey).expect("Error encrypting username")
     );
 
     // Hash password
@@ -190,9 +187,7 @@ pub async fn handle_change_password(
 
     println!(
         "Changing password for user: {}",
-        encrypt_string(&username, EncryptionKey::LoggerKey)
-            .await
-            .expect("Error encrypting username")
+        encrypt_string(&username, EncryptionKey::LoggerKey).expect("Error encrypting username")
     );
 
     // Hash new password
@@ -316,7 +311,6 @@ pub async fn handle_request_password_reset(
     let name = user.first_name;
 
     let user_email = decrypt_string(&user.email, EncryptionKey::SmtpKey)
-        .await
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
     task::spawn_blocking(move || {

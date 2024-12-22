@@ -3,10 +3,9 @@ use super::models::{NewRefreshToken, OauthClient};
 use super::schema::{oauth_clients, refresh_tokens};
 use super::DBError;
 use crate::db::schema::{self};
-use crate::server::auth_functions::{decrypt_string, encrypt_string};
 use diesel::dsl::select;
 use diesel::prelude::*;
-use encryption_libs::EncryptionKey;
+use encryption_libs::{decrypt_string, encrypt_string, EncryptionKey};
 use schema::refresh_tokens::dsl::*;
 use std::time::Duration;
 
@@ -41,9 +40,7 @@ impl DbInstance {
             .checked_add(Duration::new(604800, 0))
             .expect("Error parsing time");
 
-        let encrypted_token = encrypt_string(r_token, EncryptionKey::OauthKey)
-            .await
-            .unwrap();
+        let encrypted_token = encrypt_string(r_token, EncryptionKey::OauthKey).unwrap();
 
         let new_refresh_token = NewRefreshToken {
             client_id: &oauth_client.id,
@@ -86,9 +83,7 @@ impl DbInstance {
         }
 
         Ok((
-            decrypt_string(&stored_token, EncryptionKey::OauthKey)
-                .await
-                .unwrap(),
+            decrypt_string(&stored_token, EncryptionKey::OauthKey).unwrap(),
             uname,
         ))
     }
@@ -123,7 +118,6 @@ impl DbInstance {
         }
 
         let decrypted_token = decrypt_string(&token, EncryptionKey::OauthKey)
-            .await
             .map_err(|err| DBError::Error(err.to_string()))?;
 
         Ok(decrypted_token)
@@ -152,9 +146,7 @@ impl DbInstance {
             .optional()?
             .ok_or_else(|| DBError::NotFound(c_id.clone()))?;
 
-        let encrypted_token = encrypt_string(new_token, EncryptionKey::OauthKey)
-            .await
-            .unwrap();
+        let encrypted_token = encrypt_string(new_token, EncryptionKey::OauthKey).unwrap();
 
         diesel::update(refresh_tokens.filter(client_id.eq(client.id).and(username.eq(uname))))
             .set((

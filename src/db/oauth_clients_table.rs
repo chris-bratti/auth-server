@@ -2,9 +2,8 @@ use super::db_helper::DbInstance;
 use super::models::{NewOauthClient, OauthClient};
 use super::DBError;
 use crate::db::schema::{self};
-use crate::server::auth_functions::encrypt_string;
 use diesel::prelude::*;
-use encryption_libs::EncryptionKey;
+use encryption_libs::{encrypt_string, EncryptionKey};
 use schema::oauth_clients::dsl::*;
 
 impl DbInstance {
@@ -30,11 +29,9 @@ impl DbInstance {
     ) -> Result<OauthClient, DBError> {
         let mut connection = self.db_connection.connect()?;
 
-        let encrypted_email = encrypt_string(email, EncryptionKey::SmtpKey).await.unwrap();
+        let encrypted_email = encrypt_string(email, EncryptionKey::SmtpKey).unwrap();
 
-        let encrypted_secret = encrypt_string(c_secret, EncryptionKey::OauthKey)
-            .await
-            .unwrap();
+        let encrypted_secret = encrypt_string(c_secret, EncryptionKey::OauthKey).unwrap();
 
         let new_client = NewOauthClient {
             app_name: name,
@@ -73,13 +70,10 @@ impl DbInstance {
 #[cfg(test)]
 pub mod test_oauth_dbs {
 
-    use encryption_libs::EncryptionKey;
+    use encryption_libs::{decrypt_string, EncryptionKey};
     use serial_test::serial;
 
-    use crate::{
-        db::db_helper::DbInstance,
-        server::auth_functions::{decrypt_string, generate_token},
-    };
+    use crate::{db::db_helper::DbInstance, server::auth_functions::generate_token};
 
     use lazy_static::lazy_static;
 
@@ -103,9 +97,7 @@ pub mod test_oauth_dbs {
             .unwrap();
 
         let unencrypted_secret =
-            decrypt_string(&returned_client.client_secret, EncryptionKey::OauthKey)
-                .await
-                .unwrap();
+            decrypt_string(&returned_client.client_secret, EncryptionKey::OauthKey).unwrap();
 
         assert_eq!(unencrypted_secret, c_secret);
 
@@ -121,9 +113,8 @@ pub mod test_oauth_dbs {
 
         let read_client = read_client.unwrap();
 
-        let decrypted_email = decrypt_string(&read_client.contact_email, EncryptionKey::SmtpKey)
-            .await
-            .unwrap();
+        let decrypted_email =
+            decrypt_string(&read_client.contact_email, EncryptionKey::SmtpKey).unwrap();
 
         assert_eq!(read_client.app_name, name);
         assert_eq!(decrypted_email, email);

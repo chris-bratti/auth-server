@@ -1,4 +1,4 @@
-use crate::server::auth_functions::{encrypt_string, hash_string};
+use crate::server::auth_functions::hash_string;
 
 use super::{
     db_helper::DbInstance,
@@ -9,7 +9,7 @@ use super::{
 use chrono::{DateTime, Utc};
 use diesel::prelude::*;
 use diesel::select;
-use encryption_libs::EncryptionKey;
+use encryption_libs::{encrypt_string, EncryptionKey};
 use schema::admins::dsl::*;
 
 impl DbInstance {
@@ -23,9 +23,7 @@ impl DbInstance {
 
         let hashed_pass = hash_string(pass).await.unwrap();
 
-        let encrypted_email = encrypt_string(plaintext_email, EncryptionKey::TwoFactorKey)
-            .await
-            .unwrap();
+        let encrypted_email = encrypt_string(plaintext_email, EncryptionKey::TwoFactorKey).unwrap();
 
         let new_admin = NewAppAdmin {
             username: uname,
@@ -45,9 +43,7 @@ impl DbInstance {
     pub async fn initialize_admin(&self, uname: &String, tf_token: &String) -> Result<(), DBError> {
         let mut connection = self.db_connection.connect()?;
 
-        let encrypted_token = encrypt_string(tf_token, EncryptionKey::TwoFactorKey)
-            .await
-            .unwrap();
+        let encrypted_token = encrypt_string(tf_token, EncryptionKey::TwoFactorKey).unwrap();
 
         diesel::update(admins.filter(username.eq(uname)))
             .set((two_factor_token.eq(encrypted_token), initialized.eq(true)))
