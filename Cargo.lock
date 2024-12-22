@@ -1321,8 +1321,12 @@ dependencies = [
 name = "encryption-libs"
 version = "0.1.0"
 dependencies = [
+ "aes-gcm",
  "darling 0.20.10",
  "dotenvy",
+ "hex",
+ "proc-macro2",
+ "quote",
 ]
 
 [[package]]

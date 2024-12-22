@@ -54,6 +54,8 @@ cfg_if! {
         use lazy_static::lazy_static;
         use auth_server::HtmlError;
 
+        use encryption_libs::Encryptable;
+
         lazy_static! {
             static ref SITE_ADDR: String = get_env_variable("SITE_ADDR").unwrap();
         }
@@ -184,12 +186,32 @@ cfg_if! {
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     use actix_web_httpauth::middleware::HttpAuthentication;
+    use auth_server::{TestEncryption, TestThing};
+    use encryption_libs::EncryptableString;
 
     let redis_connection_string =
         get_env_variable("REDIS_CONNECTION_STRING").expect("Connection string not set!");
 
     // Creates a shared instance of the database connection and Redis client for re-use
     let db_instance = web::Data::new(DbInstance::new());
+
+    let mut test = TestEncryption {
+        user_email: EncryptableString::from("Testemail@pub.com"),
+        first_name: "John".to_string(),
+        last_name: EncryptableString::from("Smith"),
+    };
+
+    test.encrypt();
+
+    println!("Encrypted: {:#?}", test);
+
+    test.decrypt();
+
+    println!("Decrypted: {:#?}", test);
+
+    test.decrypt();
+
+    println!("Decrypted: {:#?}", test);
 
     let redis_client =
         web::Data::new(redis::Client::open(redis_connection_string.clone()).unwrap());

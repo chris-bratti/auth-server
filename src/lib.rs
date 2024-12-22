@@ -1,11 +1,13 @@
 #![allow(async_fn_in_trait)]
-use auto_encryption::AutoEncryption;
+use auto_encryption::Encryptable;
 use core::{fmt, str::FromStr};
-use encryption_libs::AutoEncryption;
+use encryption_libs::Encryptable;
+use encryption_libs::EncryptableString;
 use encryption_libs::EncryptionKey;
 use leptos_router::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::fmt::Debug;
 
 pub mod client;
 pub mod controllers;
@@ -329,16 +331,33 @@ pub struct UserInfoResponse {
     pub timestamp: i64,
 }
 
-#[derive(AutoEncryption)]
+#[derive(Encryptable)]
 pub struct TestEncryption {
     #[encrypted(EncryptionKey::SMTP)]
-    pub user_email: String,
+    pub user_email: EncryptableString,
+
+    pub first_name: String,
+
+    #[encrypted(EncryptionKey::OauthKey)]
+    pub last_name: EncryptableString,
 }
 
-impl TestEncryption {
-    pub fn default() -> Self {
-        TestEncryption {
-            user_email: String::from(""),
-        }
+impl Debug for TestEncryption {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TestEncryption")
+            .field("user_email", &self.user_email.value)
+            .field("first_name", &self.first_name)
+            .field("last_name", &self.last_name.value)
+            .finish()
+    }
+}
+
+pub struct TestThing {
+    pub test: String,
+}
+
+impl TestThing {
+    pub fn update(&mut self) {
+        self.test = "New test".to_string();
     }
 }
