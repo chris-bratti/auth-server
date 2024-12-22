@@ -4,6 +4,7 @@ use super::DBError;
 use crate::db::schema::{self};
 use crate::server::auth_functions::encrypt_string;
 use diesel::prelude::*;
+use encryption_libs::EncryptionKey;
 use schema::oauth_clients::dsl::*;
 
 impl DbInstance {
@@ -29,11 +30,9 @@ impl DbInstance {
     ) -> Result<OauthClient, DBError> {
         let mut connection = self.db_connection.connect()?;
 
-        let encrypted_email = encrypt_string(email, crate::EncryptionKey::SmtpKey)
-            .await
-            .unwrap();
+        let encrypted_email = encrypt_string(email, EncryptionKey::SmtpKey).await.unwrap();
 
-        let encrypted_secret = encrypt_string(c_secret, crate::EncryptionKey::OauthKey)
+        let encrypted_secret = encrypt_string(c_secret, EncryptionKey::OauthKey)
             .await
             .unwrap();
 
@@ -74,6 +73,7 @@ impl DbInstance {
 #[cfg(test)]
 pub mod test_oauth_dbs {
 
+    use encryption_libs::EncryptionKey;
     use serial_test::serial;
 
     use crate::{
@@ -102,12 +102,10 @@ pub mod test_oauth_dbs {
             .await
             .unwrap();
 
-        let unencrypted_secret = decrypt_string(
-            &returned_client.client_secret,
-            crate::EncryptionKey::OauthKey,
-        )
-        .await
-        .unwrap();
+        let unencrypted_secret =
+            decrypt_string(&returned_client.client_secret, EncryptionKey::OauthKey)
+                .await
+                .unwrap();
 
         assert_eq!(unencrypted_secret, c_secret);
 
@@ -123,10 +121,9 @@ pub mod test_oauth_dbs {
 
         let read_client = read_client.unwrap();
 
-        let decrypted_email =
-            decrypt_string(&read_client.contact_email, crate::EncryptionKey::SmtpKey)
-                .await
-                .unwrap();
+        let decrypted_email = decrypt_string(&read_client.contact_email, EncryptionKey::SmtpKey)
+            .await
+            .unwrap();
 
         assert_eq!(read_client.app_name, name);
         assert_eq!(decrypted_email, email);

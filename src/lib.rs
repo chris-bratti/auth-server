@@ -1,5 +1,8 @@
 #![allow(async_fn_in_trait)]
+use auto_encryption::AutoEncryption;
 use core::{fmt, str::FromStr};
+use encryption_libs::AutoEncryption;
+use encryption_libs::EncryptionKey;
 use leptos_router::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -176,13 +179,6 @@ impl FromStr for AuthError {
     }
 }
 
-pub enum EncryptionKey {
-    SmtpKey,
-    TwoFactorKey,
-    LoggerKey,
-    OauthKey,
-}
-
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
 pub struct User {
     first_name: String,
@@ -331,4 +327,18 @@ pub struct UserInfoResponse {
     pub success: bool,
     pub user_data: User,
     pub timestamp: i64,
+}
+
+#[derive(AutoEncryption)]
+pub struct TestEncryption {
+    #[encrypted(EncryptionKey::SMTP)]
+    pub user_email: String,
+}
+
+impl TestEncryption {
+    pub fn default() -> Self {
+        TestEncryption {
+            user_email: String::from(""),
+        }
+    }
 }

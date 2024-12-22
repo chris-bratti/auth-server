@@ -1,0 +1,8 @@
+[package]
+name = "encryption-libs"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+dotenvy = { version = "0.15.7"}
+darling = "0.20.10"

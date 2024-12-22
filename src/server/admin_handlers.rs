@@ -1,10 +1,11 @@
 use actix_web::web;
+use encryption_libs::EncryptionKey;
 use redis::{Client, Commands};
 
 use crate::{
     db::db_helper::DbInstance,
     server::auth_functions::{check_valid_password, encrypt_string},
-    AdminTask, AuthError, EncryptionKey,
+    AdminTask, AuthError,
 };
 
 pub async fn handle_signup_admin(

@@ -1,4 +1,5 @@
 use cfg_if::cfg_if;
+use encryption_libs::EncryptionKey;
 
 cfg_if! {
     if #[cfg(feature = "ssr")] {
@@ -27,7 +28,7 @@ cfg_if! {
         use actix_session::{config::PersistentSession, storage::RedisSessionStore, SessionMiddleware};
         use redis::{Client, Commands};
         use actix_files::Files;
-        use auth_server::{app::*, server::auth_functions::{validate_oauth_token, decrypt_string}, EncryptionKey};
+        use auth_server::{app::*, server::auth_functions::{validate_oauth_token, decrypt_string}};
         use leptos::*;
         use leptos_actix::{generate_route_list, LeptosRoutes};
         use actix_web::{web, App, HttpServer, middleware::Logger, dev::{ServiceRequest},

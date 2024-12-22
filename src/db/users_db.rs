@@ -1,9 +1,10 @@
 use crate::db::models::{DBUser, NewDBUser};
 use crate::db::schema::{self};
 use crate::server::auth_functions::{decrypt_string, encrypt_string};
-use crate::{EncryptionKey, UserInfo};
+use crate::UserInfo;
 use chrono::{DateTime, Utc};
 use diesel::{prelude::*, select};
+use encryption_libs::EncryptionKey;
 use schema::users::dsl::*;
 
 use super::db_helper::DbInstance;
@@ -14,7 +15,7 @@ impl DbInstance {
     pub async fn create_db_user(&self, user_info: UserInfo) -> Result<DBUser, DBError> {
         let mut conn = self.db_connection.connect()?;
 
-        let encrypted_email = encrypt_string(&user_info.email, crate::EncryptionKey::SmtpKey)
+        let encrypted_email = encrypt_string(&user_info.email, EncryptionKey::SmtpKey)
             .await
             .unwrap();
 

@@ -2,6 +2,7 @@ use core::{option::Option::None, result::Result::Ok};
 use std::{collections::HashMap, env};
 
 use chrono::{DateTime, Utc};
+use encryption_libs::EncryptionKey;
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 
 use actix_web::{web, Result};
@@ -19,7 +20,7 @@ use dotenvy::dotenv;
 use redis::{Client, Commands};
 
 use crate::{db::db_helper::DbInstance, Claims};
-use crate::{AuthError, EncryptionKey, OauthClaims};
+use crate::{AuthError, OauthClaims};
 use totp_rs::{Algorithm, Secret, TOTP};
 
 use regex::Regex;
@@ -353,10 +354,9 @@ mod test_auth {
 
     use core::{assert_eq, assert_ne};
 
-    use crate::{
-        server::auth_functions::{check_valid_password, decrypt_string, verify_hash},
-        EncryptionKey,
-    };
+    use encryption_libs::EncryptionKey;
+
+    use crate::server::auth_functions::{check_valid_password, decrypt_string, verify_hash};
 
     use super::{encrypt_string, get_totp_config, hash_string};
 

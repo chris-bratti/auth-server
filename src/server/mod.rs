@@ -3,7 +3,6 @@ use std::time::SystemTime;
 use actix::Message;
 use actix_web::http::StatusCode;
 use actix_web::{web, HttpResponse, ResponseError};
-use auth_functions::get_env_variable;
 use leptos::ServerFnError;
 use maud::html;
 use redis::RedisError;
@@ -12,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::db::db_helper::DbInstance;
 use crate::db::models::{AppAdmin, DBUser};
 use crate::db::DBError;
-use crate::{AdminTask, AdminTaskType, EncryptionKey, HtmlError, User};
+use crate::{AdminTask, AdminTaskType, HtmlError, User};
 
 use crate::AuthError;
 
@@ -260,19 +259,6 @@ impl DatabaseUser for AppAdmin {
         db_instance
             .initialize_admin(&self.username, two_factor_token)
             .await
-    }
-}
-
-impl EncryptionKey {
-    pub fn get(&self) -> String {
-        let key = match self {
-            EncryptionKey::SmtpKey => "SMTP_ENCRYPTION_KEY",
-            EncryptionKey::TwoFactorKey => "TWO_FACTOR_KEY",
-            EncryptionKey::LoggerKey => "LOG_KEY",
-            EncryptionKey::OauthKey => "OAUTH_ENCRYPTION_KEY",
-        };
-
-        get_env_variable(key).expect("Encryption key is unset!")
     }
 }
 

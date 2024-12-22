@@ -6,6 +6,7 @@ use crate::db::schema::{self};
 use crate::server::auth_functions::{decrypt_string, encrypt_string};
 use diesel::dsl::select;
 use diesel::prelude::*;
+use encryption_libs::EncryptionKey;
 use schema::refresh_tokens::dsl::*;
 use std::time::Duration;
 
@@ -40,7 +41,7 @@ impl DbInstance {
             .checked_add(Duration::new(604800, 0))
             .expect("Error parsing time");
 
-        let encrypted_token = encrypt_string(r_token, crate::EncryptionKey::OauthKey)
+        let encrypted_token = encrypt_string(r_token, EncryptionKey::OauthKey)
             .await
             .unwrap();
 
@@ -85,7 +86,7 @@ impl DbInstance {
         }
 
         Ok((
-            decrypt_string(&stored_token, crate::EncryptionKey::OauthKey)
+            decrypt_string(&stored_token, EncryptionKey::OauthKey)
                 .await
                 .unwrap(),
             uname,
@@ -121,7 +122,7 @@ impl DbInstance {
             return Err(DBError::TokenExpired);
         }
 
-        let decrypted_token = decrypt_string(&token, crate::EncryptionKey::OauthKey)
+        let decrypted_token = decrypt_string(&token, EncryptionKey::OauthKey)
             .await
             .map_err(|err| DBError::Error(err.to_string()))?;
 
@@ -151,7 +152,7 @@ impl DbInstance {
             .optional()?
             .ok_or_else(|| DBError::NotFound(c_id.clone()))?;
 
-        let encrypted_token = encrypt_string(new_token, crate::EncryptionKey::OauthKey)
+        let encrypted_token = encrypt_string(new_token, EncryptionKey::OauthKey)
             .await
             .unwrap();
 

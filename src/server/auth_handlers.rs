@@ -6,10 +6,11 @@ use actix_session::SessionExt;
 use actix_web::{
     http::StatusCode, post, web, HttpMessage, HttpRequest, HttpResponse, Responder, Result,
 };
+use encryption_libs::EncryptionKey;
 use tokio::task;
 
 use crate::server::smtp::{generate_welcome_email_body, send_email};
-use crate::{db::db_helper::*, server::auth_functions::*, AuthError, EncryptionKey};
+use crate::{db::db_helper::*, server::auth_functions::*, AuthError};
 use crate::{AuthResponse, UserInfo};
 
 use super::smtp::generate_reset_email_body;

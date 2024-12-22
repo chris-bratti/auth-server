@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use actix::prelude::*;
 use actix_web::web;
+use encryption_libs::EncryptionKey;
 use rand::Rng;
 use redis::{Client, Commands};
 
@@ -85,15 +86,13 @@ impl Handler<OAuthClientCreated> for EmailSubscriber {
 
     fn handle(&mut self, msg: OAuthClientCreated, _ctx: &mut Self::Context) -> Self::Result {
         Box::pin(async move {
-            let decrypted_secret =
-                decrypt_string(&msg.0.client_secret, crate::EncryptionKey::OauthKey)
-                    .await
-                    .unwrap();
+            let decrypted_secret = decrypt_string(&msg.0.client_secret, EncryptionKey::OauthKey)
+                .await
+                .unwrap();
 
-            let decrypted_email =
-                decrypt_string(&msg.0.contact_email, crate::EncryptionKey::SmtpKey)
-                    .await
-                    .unwrap();
+            let decrypted_email = decrypt_string(&msg.0.contact_email, EncryptionKey::SmtpKey)
+                .await
+                .unwrap();
             let email_body = generate_new_oauth_client_body(
                 &msg.0.app_name,
                 &msg.0.client_id,

@@ -9,6 +9,7 @@ use super::{
 use chrono::{DateTime, Utc};
 use diesel::prelude::*;
 use diesel::select;
+use encryption_libs::EncryptionKey;
 use schema::admins::dsl::*;
 
 impl DbInstance {
@@ -22,7 +23,7 @@ impl DbInstance {
 
         let hashed_pass = hash_string(pass).await.unwrap();
 
-        let encrypted_email = encrypt_string(plaintext_email, crate::EncryptionKey::TwoFactorKey)
+        let encrypted_email = encrypt_string(plaintext_email, EncryptionKey::TwoFactorKey)
             .await
             .unwrap();
 
@@ -44,7 +45,7 @@ impl DbInstance {
     pub async fn initialize_admin(&self, uname: &String, tf_token: &String) -> Result<(), DBError> {
         let mut connection = self.db_connection.connect()?;
 
-        let encrypted_token = encrypt_string(tf_token, crate::EncryptionKey::TwoFactorKey)
+        let encrypted_token = encrypt_string(tf_token, EncryptionKey::TwoFactorKey)
             .await
             .unwrap();
 
