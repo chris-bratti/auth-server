@@ -1322,6 +1322,7 @@ name = "encryption-libs"
 version = "0.1.0"
 dependencies = [
  "aes-gcm",
+ "argon2",
  "darling 0.20.10",
  "dotenvy",
  "hex",

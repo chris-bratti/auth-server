@@ -6,7 +6,7 @@ use actix_session::SessionExt;
 use actix_web::{
     http::StatusCode, post, web, HttpMessage, HttpRequest, HttpResponse, Responder, Result,
 };
-use encryption_libs::{decrypt_string, encrypt_string, EncryptionKey};
+use encryption_libs::{decrypt_string, encrypt_log, encrypt_string, EncryptionKey};
 use tokio::task;
 
 use crate::server::smtp::{generate_welcome_email_body, send_email};
@@ -27,10 +27,7 @@ pub async fn handle_login<T>(
 where
     T: DatabaseUser,
 {
-    let encrypted_username: String =
-        encrypt_string(&username, EncryptionKey::LoggerKey).expect("Error encrypting username");
-
-    println!("Logging in user: {}", encrypted_username);
+    encrypt_log!("Logging in user: {}", username);
 
     if is_user_locked(&user).await? {
         return Err(AuthError::AccountLocked);
@@ -40,7 +37,7 @@ where
     let verified_result = verify_hash(&password, user.pass_hash());
 
     if verified_result.is_err() || !verified_result.unwrap() {
-        println!("Failed login attempt for {}", &encrypted_username);
+        encrypt_log!("Failed login attempt for {}", &username);
         let user_not_locked = user
             .increment_password_tries(&db_instance)
             .expect("Error marking login attempt as failed");
@@ -102,20 +99,17 @@ pub async fn handle_signup(
         Err(err) => return Err(AuthError::InternalServerError(err.to_string())),
     }
 
-    println!(
-        "Signing up user: {}",
-        encrypt_string(&username, EncryptionKey::LoggerKey).expect("Error encrypting username")
-    );
+    encrypt_log!("Signing up user: {}", &username);
 
     // Hash password
-    let pass_hash = hash_string(&password);
+    //let pass_hash = hash_string(&password);
 
     // Create user info to interact with DB
     let user_info = UserInfo {
         username: username.clone(),
         first_name: first_name.clone(),
         last_name,
-        pass_hash: pass_hash.await.expect("Error hashing password"),
+        pass_hash: password,
         email: email.clone(),
     };
 
@@ -125,9 +119,9 @@ pub async fn handle_signup(
     let generated_token = generate_token();
 
     // Hash token
-    let verification_token = hash_string(&generated_token)
-        .await
-        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
+    //let verification_token = hash_string(&generated_token)
+    //    .await
+    //    .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
     let user = user
         .await
@@ -135,7 +129,7 @@ pub async fn handle_signup(
 
     // Save token hash to DB
     db_instance
-        .save_verification_token_to_db(&username, &verification_token)
+        .save_verification_token_to_db(&username, &generated_token)
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
     // Send verification email
@@ -185,19 +179,16 @@ pub async fn handle_change_password(
         return Err(AuthError::InvalidPassword);
     }
 
-    println!(
-        "Changing password for user: {}",
-        encrypt_string(&username, EncryptionKey::LoggerKey).expect("Error encrypting username")
-    );
+    encrypt_log!("Changing password for user: {}", &username);
 
     // Hash new password
-    let pass_hash = hash_string(&password)
-        .await
-        .expect("Error hashing password");
+    //let pass_hash = hash_string(&password)
+    //    .await
+    //    .expect("Error hashing password");
 
     // Store new password in database
     db_instance
-        .update_db_password(&username, &pass_hash)
+        .update_db_password(&username, &password)
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
     Ok(HttpResponse::Ok().json(AuthResponse::<()> {
@@ -235,16 +226,14 @@ pub async fn handle_reset_password(
     }
 
     // Hash new password
-    let pass_hash = hash_string(&password)
-        .await
-        .expect("Error hashing password");
+    //let pass_hash = hash_field(&password).await.expect("Error hashing password");
 
     let username_arc = Arc::new(username);
     let db_arc = Arc::new(db_instance);
 
     // Store new password in database
     db_arc
-        .update_db_password(&username_arc, &pass_hash)
+        .update_db_password(&username_arc, &password)
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
     {
@@ -293,13 +282,13 @@ pub async fn handle_request_password_reset(
     let generated_token = generate_token();
 
     // Hash token
-    let reset_token = hash_string(&generated_token)
-        .await
-        .map_err(|_| AuthError::InternalServerError("Something went wrong".to_string()))?;
+    //let reset_token = hash_string(&generated_token)
+    //    .await
+    //    .map_err(|_| AuthError::InternalServerError("Something went wrong".to_string()))?;
 
     // Save token hash to DB
     db_instance
-        .save_reset_token_to_db(&username, &reset_token)
+        .save_reset_token_to_db(&username, &generated_token)
         .map_err(|_| AuthError::InternalServerError("Something went wrong".to_string()))?;
 
     let user = db_instance
@@ -310,12 +299,9 @@ pub async fn handle_request_password_reset(
 
     let name = user.first_name;
 
-    let user_email = decrypt_string(&user.email, EncryptionKey::SmtpKey)
-        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
-
     task::spawn_blocking(move || {
         send_email(
-            &user_email,
+            &user.email,
             "Reset Password".to_string(),
             generate_reset_email_body(&generated_token, &name),
             &name,

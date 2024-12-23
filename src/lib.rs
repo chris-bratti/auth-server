@@ -330,34 +330,3 @@ pub struct UserInfoResponse {
     pub user_data: User,
     pub timestamp: i64,
 }
-
-#[derive(Encryptable)]
-pub struct TestEncryption {
-    #[encrypted(EncryptionKey::SMTP)]
-    pub user_email: EncryptableString,
-
-    pub first_name: String,
-
-    #[encrypted(EncryptionKey::OauthKey)]
-    pub last_name: EncryptableString,
-}
-
-impl Debug for TestEncryption {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TestEncryption")
-            .field("user_email", &self.user_email.value)
-            .field("first_name", &self.first_name)
-            .field("last_name", &self.last_name.value)
-            .finish()
-    }
-}
-
-pub struct TestThing {
-    pub test: String,
-}
-
-impl TestThing {
-    pub fn update(&mut self) {
-        self.test = "New test".to_string();
-    }
-}

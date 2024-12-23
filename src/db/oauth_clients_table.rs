@@ -3,7 +3,7 @@ use super::models::{NewOauthClient, OauthClient};
 use super::DBError;
 use crate::db::schema::{self};
 use diesel::prelude::*;
-use encryption_libs::{encrypt_string, EncryptionKey};
+use encryption_libs::Encryptable;
 use schema::oauth_clients::dsl::*;
 
 impl DbInstance {
@@ -29,18 +29,16 @@ impl DbInstance {
     ) -> Result<OauthClient, DBError> {
         let mut connection = self.db_connection.connect()?;
 
-        let encrypted_email = encrypt_string(email, EncryptionKey::SmtpKey).unwrap();
-
-        let encrypted_secret = encrypt_string(c_secret, EncryptionKey::OauthKey).unwrap();
-
-        let new_client = NewOauthClient {
+        let mut new_client = NewOauthClient {
             app_name: name,
-            contact_email: &encrypted_email,
+            contact_email: email.clone(),
             client_id: c_id,
-            client_secret: &encrypted_secret,
+            client_secret: c_secret.clone(),
             redirect_url: url,
             approved: &false,
         };
+
+        new_client.encrypt();
 
         diesel::insert_into(oauth_clients)
             .values(&new_client)

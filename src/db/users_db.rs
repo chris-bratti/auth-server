@@ -3,7 +3,7 @@ use crate::db::schema::{self};
 use crate::UserInfo;
 use chrono::{DateTime, Utc};
 use diesel::{prelude::*, select};
-use encryption_libs::{decrypt_string, encrypt_string, EncryptionKey};
+use encryption_libs::{decrypt_string, encrypt_string, Encryptable, EncryptionKey};
 use schema::users::dsl::*;
 
 use super::db_helper::DbInstance;
@@ -14,18 +14,18 @@ impl DbInstance {
     pub async fn create_db_user(&self, user_info: UserInfo) -> Result<DBUser, DBError> {
         let mut conn = self.db_connection.connect()?;
 
-        let encrypted_email = encrypt_string(&user_info.email, EncryptionKey::SmtpKey).unwrap();
-
-        let new_user = NewDBUser {
+        let mut new_user = NewDBUser {
             first_name: &user_info.first_name,
             last_name: &user_info.last_name,
             username: &user_info.username,
-            pass_hash: &user_info.pass_hash,
-            email: &encrypted_email,
+            pass_hash: user_info.pass_hash,
+            email: user_info.email,
             verified: &false,
             two_factor: &false,
             locked: &false,
         };
+
+        new_user.encrypt();
 
         diesel::insert_into(users::table)
             .values(&new_user)
@@ -46,7 +46,7 @@ impl DbInstance {
             .map_err(DBError::from)?;
 
         if let Some(mut db_user) = user_result {
-            db_user.email = decrypt_string(&db_user.email, EncryptionKey::SmtpKey).unwrap();
+            db_user.decrypt();
             Ok(Some(db_user))
         } else {
             Ok(None)

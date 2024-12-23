@@ -2,6 +2,7 @@ use core::convert::From;
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
+use encryption_libs::Encryptable;
 
 use crate::{User, UserInfo};
 
@@ -120,7 +121,10 @@ impl DbInstance {
         let db_user = self.get_user_from_username(username).await?;
 
         match db_user {
-            Some(db_user) => Ok(Some(User::from(db_user))),
+            Some(mut db_user) => {
+                db_user.decrypt();
+                Ok(Some(User::from(db_user)))
+            }
             None => Ok(None),
         }
     }

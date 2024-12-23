@@ -2,6 +2,7 @@ use crate::db::models::{DBResetToken, DBUser, NewDBResetToken};
 use crate::db::schema::password_reset_tokens::user_id;
 use crate::db::schema::{self, password_reset_tokens};
 use diesel::{prelude::*, select};
+use encryption_libs::Encryptable;
 use schema::users::dsl::*;
 use std::time::Duration;
 
@@ -45,11 +46,12 @@ impl DbInstance {
 
         match db_user {
             Some(user) => {
-                let db_reset_token = NewDBResetToken {
-                    reset_token: rtoken,
+                let mut db_reset_token = NewDBResetToken {
+                    reset_token: rtoken.clone(),
                     reset_token_expiry: &token_expiry,
                     user_id: &user.id,
                 };
+                db_reset_token.encrypt();
                 diesel::insert_into(password_reset_tokens::table)
                     .values(&db_reset_token)
                     .returning(DBResetToken::as_returning())

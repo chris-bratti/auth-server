@@ -1,5 +1,3 @@
-use crate::server::auth_functions::hash_string;
-
 use super::{
     db_helper::DbInstance,
     models::{AppAdmin, NewAppAdmin},
@@ -9,7 +7,7 @@ use super::{
 use chrono::{DateTime, Utc};
 use diesel::prelude::*;
 use diesel::select;
-use encryption_libs::{encrypt_string, EncryptionKey};
+use encryption_libs::{encrypt_string, Encryptable, EncryptionKey};
 use schema::admins::dsl::*;
 
 impl DbInstance {
@@ -21,17 +19,15 @@ impl DbInstance {
     ) -> Result<(), DBError> {
         let mut connection = self.db_connection.connect()?;
 
-        let hashed_pass = hash_string(pass).await.unwrap();
-
-        let encrypted_email = encrypt_string(plaintext_email, EncryptionKey::TwoFactorKey).unwrap();
-
-        let new_admin = NewAppAdmin {
-            username: uname,
-            email: &encrypted_email,
-            pass_hash: &hashed_pass,
-            initialized: &false,
-            locked: &false,
+        let mut new_admin = NewAppAdmin {
+            username: uname.clone(),
+            email: plaintext_email.clone(),
+            pass_hash: pass.clone(),
+            initialized: false,
+            locked: false,
         };
+
+        new_admin.encrypt();
 
         diesel::insert_into(admins)
             .values(&new_admin)

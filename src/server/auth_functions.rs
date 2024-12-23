@@ -70,19 +70,6 @@ pub async fn get_totp(username: &String, two_factor_token: &String) -> Result<St
         .map_err(|err| AuthError::InternalServerError(err.to_string()))
 }
 
-/// Hash password with Argon2
-pub async fn hash_string(password: &String) -> Result<String, argon2::password_hash::Error> {
-    let salt = SaltString::generate(&mut OsRng);
-
-    let argon2 = Argon2::default();
-
-    let password_hash = argon2
-        .hash_password(password.as_bytes(), &salt)?
-        .to_string();
-
-    Ok(password_hash)
-}
-
 /// Verifies password against hash
 pub fn verify_hash(
     password: &String,
@@ -305,17 +292,17 @@ mod test_auth {
 
     use core::{assert_eq, assert_ne};
 
-    use encryption_libs::{decrypt_string, encrypt_string, EncryptionKey};
+    use encryption_libs::{decrypt_string, encrypt_string, hash_field, EncryptionKey};
 
     use crate::server::auth_functions::{check_valid_password, verify_hash};
 
-    use super::{get_totp_config, hash_string};
+    use super::get_totp_config;
 
     #[tokio::test]
     async fn test_password_hashing() {
         let password = "whatALovelyL!ttleP@s$w0rd".to_string();
 
-        let hashed_password = hash_string(&password.clone()).await;
+        let hashed_password = hash_field(&password.clone());
 
         assert!(hashed_password.is_ok());
 

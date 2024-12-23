@@ -2,9 +2,26 @@ use aes_gcm::{
     Aes256Gcm, Key, Nonce,
     aead::{Aead, AeadCore, KeyInit, OsRng},
 };
+use argon2::{
+    Argon2,
+    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+};
 use dotenvy::dotenv;
 use quote::{ToTokens, quote};
 use std::env;
+
+#[macro_export]
+macro_rules! encrypt_log {
+    ($fmt:expr, $($arg:tt)*) => {
+        {
+            let formatted_message = format!($fmt, $($arg)*);
+
+            let encrypted_value = encrypt_string($($arg)*, EncryptionKey::LoggerKey).unwrap();
+
+            println!($fmt, encrypted_value);
+        }
+    };
+}
 
 impl EncryptionKey {
     pub fn get(&self) -> String {
@@ -34,10 +51,10 @@ impl ToTokens for EncryptionKey {
 impl From<&String> for EncryptionKey {
     fn from(value: &String) -> Self {
         match value.to_lowercase().as_str() {
-            "smtp" => EncryptionKey::SmtpKey,
-            "twofactor" => EncryptionKey::TwoFactorKey,
-            "logger" => EncryptionKey::LoggerKey,
-            "oauth" => EncryptionKey::OauthKey,
+            "smtpkey" => EncryptionKey::SmtpKey,
+            "twofactorkey" => EncryptionKey::TwoFactorKey,
+            "loggerkey" => EncryptionKey::LoggerKey,
+            "oauthkey" => EncryptionKey::OauthKey,
             _ => EncryptionKey::TwoFactorKey,
         }
     }
@@ -64,6 +81,12 @@ pub fn get_env_variable(variable: &str) -> Option<String> {
     }
 }
 
+pub struct HashableString {
+    pub hashed: bool,
+    pub value: String,
+}
+
+#[derive(Debug)]
 pub struct EncryptableString {
     pub encrypted: bool,
     pub value: String,
@@ -74,6 +97,15 @@ impl EncryptableString {
         EncryptableString {
             encrypted: false,
             value: value.to_string(),
+        }
+    }
+}
+
+impl From<String> for EncryptableString {
+    fn from(value: String) -> Self {
+        EncryptableString {
+            encrypted: false,
+            value,
         }
     }
 }
@@ -123,4 +155,28 @@ pub fn decrypt_string(
         .expect("failed to decrypt data");
 
     Ok(String::from_utf8(plaintext).expect("failed to convert vector of bytes to string"))
+}
+
+/// Hash password with Argon2
+pub fn hash_field(password: &String) -> Result<String, argon2::password_hash::Error> {
+    let salt = SaltString::generate(&mut OsRng);
+
+    let argon2 = Argon2::default();
+
+    let password_hash = argon2
+        .hash_password(password.as_bytes(), &salt)?
+        .to_string();
+
+    Ok(password_hash)
+}
+
+/// Verifies password against hash
+pub fn verify_hash(
+    password: &String,
+    password_hash: &String,
+) -> Result<bool, argon2::password_hash::Error> {
+    let parsed_hash = PasswordHash::new(&password_hash)?;
+    Ok(Argon2::default()
+        .verify_password(password.as_bytes(), &parsed_hash)
+        .is_ok())
 }

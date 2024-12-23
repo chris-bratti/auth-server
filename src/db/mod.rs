@@ -1,3 +1,4 @@
+use encryption_libs::Encryptable;
 use thiserror::Error;
 
 pub mod admins_table;
@@ -51,8 +52,43 @@ impl DbConnection {
             .unwrap();
         DbConnection { connection_pool }
     }
+}
 
-    pub fn test_instance() {
-        todo!()
+pub struct DatabaseEncryption<T>
+where
+    T: Encryptable,
+{
+    pub encrypted: bool,
+    pub data: T,
+}
+
+impl<T> DatabaseEncryption<T>
+where
+    T: Encryptable,
+{
+    pub fn from_encrypted(data: T) -> Self {
+        DatabaseEncryption {
+            encrypted: true,
+            data,
+        }
+    }
+
+    pub fn from_unencrypted(data: T) -> Self {
+        DatabaseEncryption {
+            encrypted: false,
+            data,
+        }
+    }
+
+    pub fn decrypted(&mut self) -> &T {
+        self.data.decrypt();
+
+        &self.data
+    }
+
+    pub fn encrypted(&mut self) -> &T {
+        self.data.encrypt();
+
+        &self.data
     }
 }

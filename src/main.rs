@@ -186,7 +186,7 @@ cfg_if! {
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     use actix_web_httpauth::middleware::HttpAuthentication;
-    use auth_server::TestEncryption;
+    use auth_server::db::models::NewAppAdmin;
     use encryption_libs::EncryptableString;
 
     let redis_connection_string =
@@ -195,23 +195,17 @@ async fn main() -> std::io::Result<()> {
     // Creates a shared instance of the database connection and Redis client for re-use
     let db_instance = web::Data::new(DbInstance::new());
 
-    let mut test = TestEncryption {
-        user_email: EncryptableString::from("Testemail@pub.com"),
-        first_name: "John".to_string(),
-        last_name: EncryptableString::from("Smith"),
+    let mut admin = NewAppAdmin {
+        username: "newAdmin".to_string(),
+        email: "test@gmail.com".to_string(),
+        pass_hash: "Password1234!".to_string(),
+        initialized: false,
+        locked: false,
     };
 
-    test.encrypt();
+    admin.encrypt();
 
-    println!("Encrypted: {:#?}", test);
-
-    test.decrypt();
-
-    println!("Decrypted: {:#?}", test);
-
-    test.decrypt();
-
-    println!("Decrypted: {:#?}", test);
+    println!("{:#?}", admin);
 
     let redis_client =
         web::Data::new(redis::Client::open(redis_connection_string.clone()).unwrap());

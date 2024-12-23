@@ -1,11 +1,11 @@
 use super::db_helper::DbInstance;
-use super::models::{NewRefreshToken, OauthClient};
+use super::models::{NewRefreshToken, OauthClient, RefreshToken};
 use super::schema::{oauth_clients, refresh_tokens};
 use super::DBError;
 use crate::db::schema::{self};
 use diesel::dsl::select;
 use diesel::prelude::*;
-use encryption_libs::{decrypt_string, encrypt_string, EncryptionKey};
+use encryption_libs::{encrypt_string, Encryptable, EncryptionKey};
 use schema::refresh_tokens::dsl::*;
 use std::time::Duration;
 
@@ -40,15 +40,14 @@ impl DbInstance {
             .checked_add(Duration::new(604800, 0))
             .expect("Error parsing time");
 
-        let encrypted_token = encrypt_string(r_token, EncryptionKey::OauthKey).unwrap();
-
-        let new_refresh_token = NewRefreshToken {
+        let mut new_refresh_token = NewRefreshToken {
             client_id: &oauth_client.id,
-            refresh_token: &encrypted_token,
+            refresh_token: r_token.clone(),
             token_id: t_id,
             username: uname,
             expiry: &token_expiry,
         };
+        new_refresh_token.encrypt();
         diesel::insert_into(refresh_tokens)
             .values(&new_refresh_token)
             .execute(&mut con)?;
@@ -64,28 +63,26 @@ impl DbInstance {
 
         let now = select(diesel::dsl::now).get_result::<std::time::SystemTime>(&mut con)?;
 
-        let (stored_token, uname, expiration): (String, String, std::time::SystemTime) =
-            refresh_tokens
-                .inner_join(oauth_clients::table)
-                .filter(
-                    oauth_clients::client_id
-                        .eq(c_id)
-                        .and(refresh_tokens::token_id.eq(r_id)),
-                )
-                .limit(1)
-                .select((refresh_token, username, expiry))
-                .first(&mut con)
-                .optional()?
-                .ok_or_else(|| DBError::NotFound("Refresh token for client id".to_string()))?;
+        let mut token: RefreshToken = refresh_tokens
+            .inner_join(oauth_clients::table)
+            .filter(
+                oauth_clients::client_id
+                    .eq(c_id)
+                    .and(refresh_tokens::token_id.eq(r_id)),
+            )
+            .limit(1)
+            .select(RefreshToken::as_returning())
+            .first(&mut con)
+            .optional()?
+            .ok_or_else(|| DBError::NotFound("Refresh token for client id".to_string()))?;
 
-        if now > expiration {
+        token.decrypt();
+
+        if now > token.expiry {
             return Err(DBError::TokenExpired);
         }
 
-        Ok((
-            decrypt_string(&stored_token, EncryptionKey::OauthKey).unwrap(),
-            uname,
-        ))
+        Ok((token.refresh_token, token.username))
     }
 
     pub async fn get_refresh_token_from_id(
@@ -97,7 +94,7 @@ impl DbInstance {
 
         let now = select(diesel::dsl::now).get_result::<std::time::SystemTime>(&mut con)?;
 
-        let token_data: Option<(String, std::time::SystemTime)> = refresh_tokens
+        let mut token: RefreshToken = refresh_tokens
             .inner_join(oauth_clients::table)
             .filter(
                 oauth_clients::client_id
@@ -105,22 +102,18 @@ impl DbInstance {
                     .and(refresh_tokens::username.eq(uname)),
             )
             .limit(1)
-            .select((refresh_token, expiry))
+            .select(RefreshToken::as_returning())
             .first(&mut con)
-            .optional()?;
+            .optional()?
+            .ok_or_else(|| DBError::NotFound(c_id.clone()))?;
 
-        let (token, expiration) = token_data
-            .ok_or_else(|| DBError::NotFound(c_id.clone()))?
-            .into();
+        token.decrypt();
 
-        if now > expiration {
+        if now > token.expiry {
             return Err(DBError::TokenExpired);
         }
 
-        let decrypted_token = decrypt_string(&token, EncryptionKey::OauthKey)
-            .map_err(|err| DBError::Error(err.to_string()))?;
-
-        Ok(decrypted_token)
+        Ok(token.refresh_token)
     }
 
     pub async fn update_refresh_token(
