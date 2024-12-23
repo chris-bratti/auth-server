@@ -7,7 +7,7 @@ use super::{
 use chrono::{DateTime, Utc};
 use diesel::prelude::*;
 use diesel::select;
-use encryption_libs::{encrypt_string, EncryptableString, EncryptionKey, HashableString};
+use encryption_libs::{EncryptableString, HashableString};
 use schema::admins::dsl::*;
 
 impl DbInstance {
@@ -37,10 +37,11 @@ impl DbInstance {
     pub async fn initialize_admin(&self, uname: &String, tf_token: &String) -> Result<(), DBError> {
         let mut connection = self.db_connection.connect()?;
 
-        let encrypted_token = encrypt_string(tf_token, EncryptionKey::TwoFactorKey).unwrap();
-
         diesel::update(admins.filter(username.eq(uname)))
-            .set((two_factor_token.eq(encrypted_token), initialized.eq(true)))
+            .set((
+                two_factor_token.eq(EncryptableString::from(tf_token)),
+                initialized.eq(true),
+            ))
             .execute(&mut connection)?;
 
         Ok(())

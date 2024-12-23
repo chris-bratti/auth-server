@@ -33,7 +33,6 @@ pub fn encryptable(input: TokenStream) -> TokenStream {
             let field_name = field.ident.unwrap();
 
             if let syn::Type::Path(type_path) = &field.ty {
-                eprintln!("I'm here {:#?}", type_path);
                 if type_path.path.segments.last().unwrap().ident == "EncryptableString" {
                     for attr in field.attrs {
                         if attr.path().is_ident("encrypted") {

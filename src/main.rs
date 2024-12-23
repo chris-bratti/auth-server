@@ -131,7 +131,7 @@ cfg_if! {
 
             let stored_key = stored_key.ok_or_else(|| AuthError::InvalidToken).unwrap();
 
-            if secret.to_string() != decrypt_string(&stored_key, EncryptionKey::OauthKey).unwrap() {
+            if secret.to_string() != decrypt_string(&stored_key, EncryptionKey::SmtpKey).unwrap() {
                 return Err((actix_web::error::ErrorUnauthorized("Invalid client info"), req));
             }
 
@@ -324,7 +324,7 @@ async fn get_user_info(
 
     Ok(HttpResponse::Ok().json(UserInfoResponse {
         success: true,
-        user_data: user,
+        user_data: user.into(),
         timestamp: chrono::Utc::now().timestamp(),
     }))
 }

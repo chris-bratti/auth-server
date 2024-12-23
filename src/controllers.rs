@@ -399,7 +399,7 @@ pub async fn enable_2fa(username: String, otp: String) -> Result<bool, ServerFnE
 pub async fn change_password(
     username: String,
     current_password: String,
-    password: String,
+    new_password: String,
     confirm_password: String,
 ) -> Result<(), ServerFnError<AuthError>> {
     let (_, db_instance) = get_request_data().await?;
@@ -409,7 +409,7 @@ pub async fn change_password(
     handle_change_password(
         username,
         current_password,
-        password,
+        new_password,
         confirm_password,
         db_instance,
     )

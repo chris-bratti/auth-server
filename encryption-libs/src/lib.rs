@@ -185,7 +185,7 @@ impl EncryptableString {
     }
 
     pub fn eq_decrypted(&self, val: &String) -> bool {
-        &self.get_decrypted().to_string() == val
+        self.get_decrypted().to_string() == *val
     }
 }
 

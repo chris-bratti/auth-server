@@ -179,6 +179,16 @@ impl FromStr for AuthError {
     }
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+pub struct OauthUserInfo {
+    first_name: String,
+    last_name: String,
+    username: String,
+    two_factor: bool,
+    verified: bool,
+    email: String,
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
 pub struct User {
     first_name: String,
@@ -187,6 +197,27 @@ pub struct User {
     two_factor: bool,
     verified: bool,
     email: EncryptableString,
+}
+
+impl From<User> for OauthUserInfo {
+    fn from(value: User) -> Self {
+        let User {
+            first_name,
+            last_name,
+            username,
+            two_factor,
+            verified,
+            email,
+        } = value.into();
+        OauthUserInfo {
+            first_name,
+            last_name,
+            username,
+            two_factor,
+            verified,
+            email: email.get_decrypted().to_string(),
+        }
+    }
 }
 
 impl From<User> for UserBasicInfo {
@@ -325,6 +356,6 @@ pub struct RefreshTokenResponse {
 #[derive(Serialize)]
 pub struct UserInfoResponse {
     pub success: bool,
-    pub user_data: User,
+    pub user_data: OauthUserInfo,
     pub timestamp: i64,
 }
