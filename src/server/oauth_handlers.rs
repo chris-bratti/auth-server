@@ -197,7 +197,7 @@ pub async fn handle_reload_oauth_clients(
     let mut clients_loaded = 0;
 
     for (client_id, (client_secret, redirect_url)) in &oauth_clients {
-        () = con.hset("oauth_clients", client_id, client_secret.get())?;
+        () = con.hset("oauth_clients", client_id, client_secret)?;
         () = con.hset("redirect_urls", client_id, redirect_url)?;
         clients_loaded = clients_loaded + 1;
     }

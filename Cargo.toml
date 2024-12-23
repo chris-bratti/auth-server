@@ -55,7 +55,7 @@ url = { version = "2.5.4", optional = true }
 actix-rt = {version = "2.10.0", optional = true}
 actix = { version = "0.13.5", optional = true }
 auto-encryption = { path = "./auto-encryption" }
-encryption-libs = { path = "./encryption-libs" }
+encryption-libs = { path = "./encryption-libs" , optional = true}
 
 [features]
 csr = ["leptos/csr", "leptos_meta/csr", "leptos_router/csr"]
@@ -89,7 +89,8 @@ ssr = [
   "dep:url",
   "dep:actix-rt",
   "dep:actix",
-  "dep:rand"
+  "dep:rand",
+  "dep:encryption-libs"
 ]
 dotenvy = ["dep:dotenvy"]
 true = ["dep:true"]

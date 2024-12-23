@@ -1,6 +1,8 @@
 #![allow(async_fn_in_trait)]
 use core::{fmt, str::FromStr};
+#[cfg(feature = "ssr")]
 use encryption_libs::EncryptableString;
+#[cfg(feature = "ssr")]
 use encryption_libs::HashableString;
 use leptos_router::*;
 use serde::{Deserialize, Serialize};
@@ -189,6 +191,7 @@ pub struct OauthUserInfo {
     email: String,
 }
 
+#[cfg(feature = "ssr")]
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
 pub struct User {
     first_name: String,
@@ -199,6 +202,7 @@ pub struct User {
     email: EncryptableString,
 }
 
+#[cfg(feature = "ssr")]
 impl From<User> for OauthUserInfo {
     fn from(value: User) -> Self {
         let User {
@@ -220,6 +224,7 @@ impl From<User> for OauthUserInfo {
     }
 }
 
+#[cfg(feature = "ssr")]
 impl From<User> for UserBasicInfo {
     fn from(user: User) -> Self {
         UserBasicInfo {
@@ -257,6 +262,7 @@ impl GrantType {
     }
 }
 
+#[cfg(feature = "ssr")]
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct UserInfo {
     pub username: String,

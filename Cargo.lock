@@ -1330,6 +1330,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "rand",
+ "redis 0.27.6",
  "serde",
  "serde_json",
  "zeroize",

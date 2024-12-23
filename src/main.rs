@@ -53,7 +53,7 @@ cfg_if! {
         use lazy_static::lazy_static;
         use auth_server::HtmlError;
 
-        use encryption_libs::{decrypt_string, EncryptionKey};
+        use encryption_libs::EncryptableString;
 
         lazy_static! {
             static ref SITE_ADDR: String = get_env_variable("SITE_ADDR").unwrap();
@@ -127,11 +127,11 @@ cfg_if! {
             let mut con = redis_client.get_connection().unwrap();
 
             // Get cached secret and validate
-            let stored_key: Option<String> = con.hget("oauth_clients", &client_id).unwrap();
+            let stored_key: Option<EncryptableString> = con.hget("oauth_clients", &client_id).unwrap();
 
             let stored_key = stored_key.ok_or_else(|| AuthError::InvalidToken).unwrap();
 
-            if secret.to_string() != decrypt_string(&stored_key, EncryptionKey::SmtpKey).unwrap() {
+            if !stored_key.eq_decrypted(&secret.to_string()){
                 return Err((actix_web::error::ErrorUnauthorized("Invalid client info"), req));
             }
 

@@ -15,6 +15,7 @@ use diesel::{
 };
 use dotenvy::dotenv;
 use quote::{ToTokens, quote};
+use redis::{FromRedisValue, RedisResult, ToRedisArgs};
 use serde::{Deserialize, Serialize};
 use std::{
     env,
@@ -226,6 +227,22 @@ impl PartialEq for EncryptableString {
 
     fn ne(&self, other: &Self) -> bool {
         !self.eq(other)
+    }
+}
+
+impl ToRedisArgs for EncryptableString {
+    fn write_redis_args<W>(&self, out: &mut W)
+    where
+        W: ?Sized + redis::RedisWrite,
+    {
+        self.get().write_redis_args(out);
+    }
+}
+
+impl FromRedisValue for EncryptableString {
+    fn from_redis_value(v: &redis::Value) -> redis::RedisResult<Self> {
+        let encrypted_value: String = FromRedisValue::from_redis_value(v)?;
+        Ok(EncryptableString { encrypted_value })
     }
 }
 
