@@ -6,9 +6,21 @@ use argon2::{
     Argon2,
     password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
 };
+use diesel::{
+    backend::Backend,
+    deserialize::{FromSql, FromSqlRow},
+    expression::AsExpression,
+    serialize::ToSql,
+    sql_types::Text,
+};
 use dotenvy::dotenv;
 use quote::{ToTokens, quote};
-use std::env;
+use serde::{Deserialize, Serialize};
+use std::{
+    env,
+    fmt::{self},
+};
+use zeroize::{Zeroize, Zeroizing};
 
 #[macro_export]
 macro_rules! encrypt_log {
@@ -81,32 +93,137 @@ pub fn get_env_variable(variable: &str) -> Option<String> {
     }
 }
 
+#[derive(Clone, FromSqlRow, AsExpression, Serialize, Deserialize)]
+#[diesel(sql_type = Text)]
 pub struct HashableString {
-    pub hashed: bool,
-    pub value: String,
+    value: String,
 }
 
-#[derive(Debug)]
+impl HashableString {
+    pub fn from_str(value: &str) -> Self {
+        HashableString::from(value.to_string())
+    }
+
+    pub fn get(&self) -> &String {
+        &self.value
+    }
+
+    pub fn verify(&self, mut value: String) -> Result<bool, argon2::password_hash::Error> {
+        let result = verify_hash(&value, &self.value)?;
+        value.zeroize();
+        Ok(result)
+    }
+
+    pub fn eq_hash(&self, hash: &String) -> bool {
+        &self.value == hash
+    }
+}
+
+impl From<String> for HashableString {
+    fn from(mut value: String) -> Self {
+        let hashed_value = hash_field(&value).unwrap();
+        value.zeroize();
+        HashableString {
+            value: hashed_value,
+        }
+    }
+}
+
+impl From<&String> for HashableString {
+    fn from(value: &String) -> Self {
+        let owned = value.to_owned();
+        HashableString::from(owned)
+    }
+}
+
+impl fmt::Debug for HashableString {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("HashableString")
+            .field("value", &"**hashed**")
+            .finish()
+    }
+}
+
+impl fmt::Display for HashableString {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "**hashed**")
+    }
+}
+
+impl PartialEq for HashableString {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
+
+    fn ne(&self, other: &Self) -> bool {
+        !self.eq(other)
+    }
+}
+
+#[derive(Clone, FromSqlRow, AsExpression, Serialize, Deserialize)]
+#[diesel(sql_type = Text)]
 pub struct EncryptableString {
-    pub encrypted: bool,
-    pub value: String,
+    encrypted_value: String,
 }
 
 impl EncryptableString {
-    pub fn from(value: &str) -> Self {
-        EncryptableString {
-            encrypted: false,
-            value: value.to_string(),
-        }
+    pub fn from_str(value: &str) -> Self {
+        EncryptableString::from(value.to_string())
+    }
+
+    pub fn get(&self) -> &String {
+        &self.encrypted_value
+    }
+
+    pub fn get_decrypted(&self) -> Zeroizing<String> {
+        let decrypted = decrypt_string(&self.encrypted_value, EncryptionKey::SmtpKey).unwrap();
+        Zeroizing::new(decrypted)
+    }
+
+    pub fn eq_encrypted(&self, val: &String) -> bool {
+        &self.encrypted_value == val
+    }
+
+    pub fn eq_decrypted(&self, val: &String) -> bool {
+        &self.get_decrypted().to_string() == val
     }
 }
 
 impl From<String> for EncryptableString {
     fn from(value: String) -> Self {
-        EncryptableString {
-            encrypted: false,
-            value,
-        }
+        let encrypted_value = encrypt_string(&value.to_string(), EncryptionKey::SmtpKey).unwrap();
+        EncryptableString { encrypted_value }
+    }
+}
+
+impl From<&String> for EncryptableString {
+    fn from(value: &String) -> Self {
+        let owned = value.to_owned();
+        EncryptableString::from(owned)
+    }
+}
+
+impl fmt::Display for EncryptableString {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "**encrypted**")
+    }
+}
+
+impl fmt::Debug for EncryptableString {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EncryptableString")
+            .field("encrypted_value", &self.encrypted_value)
+            .finish()
+    }
+}
+
+impl PartialEq for EncryptableString {
+    fn eq(&self, other: &Self) -> bool {
+        self.encrypted_value == other.encrypted_value
+    }
+
+    fn ne(&self, other: &Self) -> bool {
+        !self.eq(other)
     }
 }
 
@@ -179,4 +296,48 @@ pub fn verify_hash(
     Ok(Argon2::default()
         .verify_password(password.as_bytes(), &parsed_hash)
         .is_ok())
+}
+
+impl<DB: Backend> ToSql<Text, DB> for EncryptableString
+where
+    String: ToSql<Text, DB>,
+{
+    fn to_sql<'b>(
+        &'b self,
+        out: &mut diesel::serialize::Output<'b, '_, DB>,
+    ) -> diesel::serialize::Result {
+        self.encrypted_value.to_sql(out)
+    }
+}
+
+impl<DB: Backend> FromSql<Text, DB> for EncryptableString
+where
+    String: FromSql<Text, DB>,
+{
+    fn from_sql(bytes: <DB as Backend>::RawValue<'_>) -> diesel::deserialize::Result<Self> {
+        let encrypted_value = String::from_sql(bytes)?;
+        Ok(EncryptableString { encrypted_value })
+    }
+}
+
+impl<DB: Backend> ToSql<Text, DB> for HashableString
+where
+    String: ToSql<Text, DB>,
+{
+    fn to_sql<'b>(
+        &'b self,
+        out: &mut diesel::serialize::Output<'b, '_, DB>,
+    ) -> diesel::serialize::Result {
+        self.value.to_sql(out)
+    }
+}
+
+impl<DB: Backend> FromSql<Text, DB> for HashableString
+where
+    String: FromSql<Text, DB>,
+{
+    fn from_sql(bytes: <DB as Backend>::RawValue<'_>) -> diesel::deserialize::Result<Self> {
+        let value = String::from_sql(bytes)?;
+        Ok(HashableString { value })
+    }
 }

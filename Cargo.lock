@@ -1324,10 +1324,15 @@ dependencies = [
  "aes-gcm",
  "argon2",
  "darling 0.20.10",
+ "diesel",
  "dotenvy",
  "hex",
  "proc-macro2",
  "quote",
+ "rand",
+ "serde",
+ "serde_json",
+ "zeroize",
 ]
 
 [[package]]
@@ -4252,6 +4257,12 @@ dependencies = [
  "syn 2.0.90",
  "synstructure",
 ]
+
+[[package]]
+name = "zeroize"
+version = "1.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ced3678a2879b30306d323f4542626697a464a97c0a07c9aebf7ebca65cd4dde"
 
 [[package]]
 name = "zerovec"

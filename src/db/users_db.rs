@@ -3,7 +3,7 @@ use crate::db::schema::{self};
 use crate::UserInfo;
 use chrono::{DateTime, Utc};
 use diesel::{prelude::*, select};
-use encryption_libs::{decrypt_string, encrypt_string, Encryptable, EncryptionKey};
+use encryption_libs::{EncryptableString, HashableString};
 use schema::users::dsl::*;
 
 use super::db_helper::DbInstance;
@@ -14,7 +14,7 @@ impl DbInstance {
     pub async fn create_db_user(&self, user_info: UserInfo) -> Result<DBUser, DBError> {
         let mut conn = self.db_connection.connect()?;
 
-        let mut new_user = NewDBUser {
+        let new_user = NewDBUser {
             first_name: &user_info.first_name,
             last_name: &user_info.last_name,
             username: &user_info.username,
@@ -24,8 +24,6 @@ impl DbInstance {
             two_factor: &false,
             locked: &false,
         };
-
-        new_user.encrypt();
 
         diesel::insert_into(users::table)
             .values(&new_user)
@@ -45,8 +43,7 @@ impl DbInstance {
             .optional()
             .map_err(DBError::from)?;
 
-        if let Some(mut db_user) = user_result {
-            db_user.decrypt();
+        if let Some(db_user) = user_result {
             Ok(Some(db_user))
         } else {
             Ok(None)
@@ -131,10 +128,8 @@ impl DbInstance {
     ) -> Result<(), DBError> {
         let mut connection = self.db_connection.connect()?;
 
-        let encrypted_token = encrypt_string(tf_token, EncryptionKey::TwoFactorKey).unwrap();
-
         diesel::update(users.filter(username.eq(uname)))
-            .set(two_factor_token.eq(encrypted_token))
+            .set(two_factor_token.eq(EncryptableString::from(tf_token)))
             .returning(DBUser::as_returning())
             .get_result(&mut connection)?;
 
@@ -169,7 +164,7 @@ impl DbInstance {
         let mut connection = self.db_connection.connect()?;
 
         diesel::update(users.filter(username.eq(uname)))
-            .set(pass_hash.eq(new_pass))
+            .set(pass_hash.eq(HashableString::from(new_pass)))
             .returning(DBUser::as_returning())
             .get_result(&mut connection)
             .map_err(DBError::from)
@@ -188,6 +183,7 @@ impl DbInstance {
 pub mod test_db {
 
     use chrono::{DateTime, Utc};
+    use encryption_libs::{EncryptableString, HashableString};
 
     use crate::{db::db_helper::DbInstance, UserInfo};
 
@@ -203,8 +199,8 @@ pub mod test_db {
             first_name: String::from("Foo"),
             last_name: String::from("Barley"),
             username: String::from("foobar"),
-            pass_hash: String::from("superdupersecrethash"),
-            email: String::from("foo@bar.com"),
+            pass_hash: HashableString::from_str("superdupersecrethash"),
+            email: EncryptableString::from_str("foo@bar.com"),
         };
 
         // Create
@@ -261,7 +257,7 @@ pub mod test_db {
         assert_ne!(db_user.pass_hash, updated_db_user.pass_hash);
 
         assert_eq!(updated_db_user.username, new_username);
-        assert_eq!(updated_db_user.pass_hash, new_password);
+        assert!(updated_db_user.pass_hash.verify(new_password).unwrap());
 
         // Delete
 
@@ -280,8 +276,8 @@ pub mod test_db {
             first_name: String::from("Foo"),
             last_name: String::from("Barley"),
             username: String::from("veryunique"),
-            pass_hash: String::from("superdupersecrethash"),
-            email: String::from("foo@bar.com"),
+            pass_hash: HashableString::from_str("superdupersecrethash"),
+            email: EncryptableString::from_str("foo@bar.com"),
         };
 
         // Create a new user
@@ -307,7 +303,7 @@ pub mod test_db {
         let retrieved_token = retrieved_token.unwrap();
 
         // Make sure reset token is the same
-        assert_eq!(reset_token, retrieved_token.reset_token);
+        assert!(retrieved_token.reset_token.verify(reset_token).unwrap());
 
         // Make sure the expiration timestamp was create correctly
         let expiry = retrieved_token.reset_token_expiry;
@@ -340,8 +336,8 @@ pub mod test_db {
             first_name: String::from("Foo"),
             last_name: String::from("Barley"),
             username: String::from("evenmoreunique"),
-            pass_hash: String::from("superdupersecrethash"),
-            email: String::from("foo@bar.com"),
+            pass_hash: HashableString::from_str("superdupersecrethash"),
+            email: EncryptableString::from_str("foo@bar.com"),
         };
 
         // Create a new user
@@ -367,7 +363,10 @@ pub mod test_db {
         let retrieved_token = retrieved_token.unwrap();
 
         // Make sure reset token is the same
-        assert_eq!(verification_token, retrieved_token.confirm_token);
+        assert!(retrieved_token
+            .confirm_token
+            .verify(verification_token)
+            .unwrap());
 
         // Make sure the expiration timestamp was create correctly
         let expiry = retrieved_token.confirm_token_expiry;

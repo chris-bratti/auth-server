@@ -2,12 +2,12 @@ use core::{option::Option::None, result::Result::Ok};
 use std::{collections::HashMap, env};
 
 use chrono::{DateTime, Utc};
-use encryption_libs::{decrypt_string, EncryptionKey};
+use encryption_libs::EncryptableString;
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 
 use actix_web::{web, Result};
 use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    password_hash::{PasswordHash, PasswordVerifier},
     Argon2,
 };
 use dotenvy::dotenv;
@@ -62,10 +62,11 @@ pub async fn create_2fa_for_user(username: &String) -> Result<(String, String), 
     Ok((qr_code, token))
 }
 
-pub async fn get_totp(username: &String, two_factor_token: &String) -> Result<String, AuthError> {
-    let decrypted_token = decrypt_string(&two_factor_token, EncryptionKey::TwoFactorKey)
-        .expect("Error decrypting string!");
-    get_totp_config(&username, &decrypted_token)
+pub async fn get_totp(
+    username: &String,
+    two_factor_token: &EncryptableString,
+) -> Result<String, AuthError> {
+    get_totp_config(&username, &two_factor_token.get_decrypted())
         .generate_current()
         .map_err(|err| AuthError::InternalServerError(err.to_string()))
 }
@@ -112,26 +113,30 @@ pub fn generate_token() -> String {
 
 pub fn verify_reset_token(
     username: &String,
-    reset_token: &String,
+    reset_token: String,
     db: &web::Data<DbInstance>,
 ) -> Result<bool, AuthError> {
     let token_hash = db
         .get_reset_hash(username)
         .map_err(|err| AuthError::Error(err.to_string()))?;
 
-    verify_hash(reset_token, &token_hash).map_err(|_| AuthError::InvalidToken)
+    token_hash
+        .verify(reset_token)
+        .map_err(|_| AuthError::InvalidToken)
 }
 
 pub fn verify_confirmation_token(
     username: &String,
-    confirmation_token: &String,
+    confirmation_token: String,
     db: &web::Data<DbInstance>,
 ) -> Result<bool, AuthError> {
     let verification_hash = db
         .get_verification_hash(username)
         .map_err(|_| AuthError::InvalidToken)?;
 
-    verify_hash(confirmation_token, &verification_hash).map_err(|_| AuthError::InvalidToken)
+    verification_hash
+        .verify(confirmation_token)
+        .map_err(|_| AuthError::InvalidToken)
 }
 
 pub async fn generate_oauth_token(
@@ -242,7 +247,7 @@ pub async fn validate_pending_token(
 
 pub async fn load_oauth_clients(
     db: &web::Data<DbInstance>,
-) -> Result<HashMap<String, (String, String)>, AuthError> {
+) -> Result<HashMap<String, (EncryptableString, String)>, AuthError> {
     let clients = db
         .get_oauth_clients()
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?

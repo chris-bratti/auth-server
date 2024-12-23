@@ -404,6 +404,8 @@ pub async fn change_password(
 ) -> Result<(), ServerFnError<AuthError>> {
     let (_, db_instance) = get_request_data().await?;
 
+    println!("Changing password");
+
     handle_change_password(
         username,
         current_password,

@@ -1,9 +1,7 @@
 #![allow(async_fn_in_trait)]
-use auto_encryption::Encryptable;
 use core::{fmt, str::FromStr};
-use encryption_libs::Encryptable;
 use encryption_libs::EncryptableString;
-use encryption_libs::EncryptionKey;
+use encryption_libs::HashableString;
 use leptos_router::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -188,7 +186,7 @@ pub struct User {
     username: String,
     two_factor: bool,
     verified: bool,
-    email: String,
+    email: EncryptableString,
 }
 
 impl From<User> for UserBasicInfo {
@@ -233,8 +231,8 @@ pub struct UserInfo {
     pub username: String,
     pub first_name: String,
     pub last_name: String,
-    pub email: String,
-    pub pass_hash: String,
+    pub email: EncryptableString,
+    pub pass_hash: HashableString,
 }
 
 #[derive(Serialize, Deserialize)]

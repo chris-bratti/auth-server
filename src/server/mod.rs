@@ -3,6 +3,7 @@ use std::time::SystemTime;
 use actix::Message;
 use actix_web::http::StatusCode;
 use actix_web::{web, HttpResponse, ResponseError};
+use encryption_libs::{EncryptableString, HashableString};
 use leptos::ServerFnError;
 use maud::html;
 use redis::RedisError;
@@ -152,8 +153,8 @@ impl ResponseError for AuthError {
 pub trait DatabaseUser {
     fn is_locked(&self) -> bool;
     fn last_failed_attempt(&self) -> Option<SystemTime>;
-    fn pass_hash(&self) -> &String;
-    fn two_factor_token(&self) -> Option<&String>;
+    fn pass_hash(&self) -> &HashableString;
+    fn two_factor_token(&self) -> Option<&EncryptableString>;
     fn two_factor(&self) -> bool;
     fn verified(&self) -> bool;
     fn increment_password_tries(
@@ -177,7 +178,7 @@ impl DatabaseUser for DBUser {
         self.last_failed_attempt
     }
 
-    fn pass_hash(&self) -> &String {
+    fn pass_hash(&self) -> &HashableString {
         &self.pass_hash
     }
 
@@ -196,7 +197,7 @@ impl DatabaseUser for DBUser {
         db_instance.increment_db_password_tries(&self.username)
     }
 
-    fn two_factor_token(&self) -> Option<&String> {
+    fn two_factor_token(&self) -> Option<&EncryptableString> {
         self.two_factor_token.as_ref()
     }
 
@@ -224,7 +225,7 @@ impl DatabaseUser for AppAdmin {
         self.last_failed_attempt
     }
 
-    fn pass_hash(&self) -> &String {
+    fn pass_hash(&self) -> &HashableString {
         &self.pass_hash
     }
 
@@ -243,7 +244,7 @@ impl DatabaseUser for AppAdmin {
         db_instance.increment_admin_password_retries(&self.username)
     }
 
-    fn two_factor_token(&self) -> Option<&String> {
+    fn two_factor_token(&self) -> Option<&EncryptableString> {
         self.two_factor_token.as_ref()
     }
 

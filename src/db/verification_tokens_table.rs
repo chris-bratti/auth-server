@@ -6,7 +6,7 @@ use crate::db::models::{DBUser, DBVerificationToken};
 use crate::db::schema::verification_tokens::user_id;
 use crate::db::schema::{self};
 use diesel::{prelude::*, select};
-use encryption_libs::Encryptable;
+use encryption_libs::HashableString;
 use schema::users::dsl::*;
 use std::time::Duration;
 
@@ -34,12 +34,11 @@ impl DbInstance {
 
         match db_user {
             Some(user) => {
-                let mut db_verification_token = NewDBVerificationToken {
-                    confirm_token: vtoken.clone(),
+                let db_verification_token = NewDBVerificationToken {
+                    confirm_token: HashableString::from(vtoken),
                     confirm_token_expiry: &token_expiry,
                     user_id: &user.id,
                 };
-                db_verification_token.encrypt();
                 diesel::insert_into(verification_tokens::table)
                     .values(&db_verification_token)
                     .returning(DBVerificationToken::as_returning())

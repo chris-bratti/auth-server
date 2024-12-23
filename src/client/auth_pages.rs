@@ -740,10 +740,12 @@ pub fn ChangePassword(username: String) -> impl IntoView {
                     } else {
                         let data_values = data.unwrap();
                         if data_values.password != data_values.confirm_password {
+                            log::info!("Passwords didn't match");
                             set_passwords_match(false);
                             ev.prevent_default();
                         }
                         if data_values.password == data_values.current_password {
+                            log::info!("Matches current password");
                             set_old_pass_used(true);
                             ev.prevent_default();
                         }
@@ -772,7 +774,7 @@ pub fn ChangePassword(username: String) -> impl IntoView {
                             name="new_password"
                             required=true
                             minLength=8
-                            maxLength=16
+                            maxLength=24
                             pattern=PASSWORD_PATTERN
                             placeholder="New Password"
                         />
@@ -786,16 +788,13 @@ pub fn ChangePassword(username: String) -> impl IntoView {
                             name="confirm_new_password"
                             required=true
                             minLength=8
-                            maxLength=16
+                            maxLength=24
                             pattern=PASSWORD_PATTERN
                             placeholder="Confirm Password"
                         />
                     </label>
                 </div>
                 <input class="btn btn-primary" type="submit" value="Update Password"/>
-                <A class="forgot-password-btn" href="/user">
-                    "To user"
-                </A>
             </ActionForm>
             {move || {
                 if !passwords_match.get() {

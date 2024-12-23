@@ -2,7 +2,7 @@ use core::convert::From;
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
-use encryption_libs::Encryptable;
+use encryption_libs::{EncryptableString, HashableString};
 
 use crate::{User, UserInfo};
 
@@ -38,7 +38,10 @@ impl DbInstance {
         Ok(admin.is_some())
     }
 
-    pub async fn get_user_2fa_token(&self, username: &String) -> Result<Option<String>, DBError> {
+    pub async fn get_user_2fa_token(
+        &self,
+        username: &String,
+    ) -> Result<Option<EncryptableString>, DBError> {
         let db_user = self.get_user_from_username(username).await?;
 
         match db_user {
@@ -47,7 +50,10 @@ impl DbInstance {
         }
     }
 
-    pub async fn get_pass_hash_for_username(&self, username: &String) -> Result<String, DBError> {
+    pub async fn get_pass_hash_for_username(
+        &self,
+        username: &String,
+    ) -> Result<HashableString, DBError> {
         let db_user = self.get_user_from_username(username).await?;
 
         match db_user {
@@ -65,7 +71,7 @@ impl DbInstance {
         }
     }
 
-    pub fn get_verification_hash(&self, username: &String) -> Result<String, DBError> {
+    pub fn get_verification_hash(&self, username: &String) -> Result<HashableString, DBError> {
         let verification_token = self.get_verification_token_from_db(username)?;
 
         match verification_token {
@@ -88,7 +94,7 @@ impl DbInstance {
         }
     }
 
-    pub fn get_reset_hash(&self, username: &String) -> Result<String, DBError> {
+    pub fn get_reset_hash(&self, username: &String) -> Result<HashableString, DBError> {
         let rest_token = self.get_reset_token_from_db(username)?;
 
         match rest_token {
@@ -121,10 +127,7 @@ impl DbInstance {
         let db_user = self.get_user_from_username(username).await?;
 
         match db_user {
-            Some(mut db_user) => {
-                db_user.decrypt();
-                Ok(Some(User::from(db_user)))
-            }
+            Some(db_user) => Ok(Some(User::from(db_user))),
             None => Ok(None),
         }
     }
@@ -147,6 +150,8 @@ impl DbInstance {
 pub mod test_db_helpers {
     use core::assert_eq;
 
+    use encryption_libs::{EncryptableString, HashableString};
+
     use crate::{db::db_helper::DbInstance, UserInfo};
 
     #[tokio::test]
@@ -155,8 +160,8 @@ pub mod test_db_helpers {
             first_name: String::from("foo"),
             last_name: String::from("bar"),
             username: String::from("foobar2"),
-            pass_hash: String::from("supersecretpassword"),
-            email: String::from("foo@bar.com"),
+            pass_hash: HashableString::from_str("supersecretpassword"),
+            email: EncryptableString::from_str("foo@bar.com"),
         };
 
         let db = DbInstance::new();

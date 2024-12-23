@@ -6,7 +6,9 @@ use actix_session::SessionExt;
 use actix_web::{
     http::StatusCode, post, web, HttpMessage, HttpRequest, HttpResponse, Responder, Result,
 };
-use encryption_libs::{decrypt_string, encrypt_log, encrypt_string, EncryptionKey};
+use encryption_libs::{
+    encrypt_log, encrypt_string, EncryptableString, EncryptionKey, HashableString,
+};
 use tokio::task;
 
 use crate::server::smtp::{generate_welcome_email_body, send_email};
@@ -34,7 +36,7 @@ where
     }
 
     // Verify password hash with Argon2
-    let verified_result = verify_hash(&password, user.pass_hash());
+    let verified_result = user.pass_hash().verify(password);
 
     if verified_result.is_err() || !verified_result.unwrap() {
         encrypt_log!("Failed login attempt for {}", &username);
@@ -101,15 +103,14 @@ pub async fn handle_signup(
 
     encrypt_log!("Signing up user: {}", &username);
 
-    // Hash password
-    //let pass_hash = hash_string(&password);
+    let email = EncryptableString::from(email);
 
     // Create user info to interact with DB
     let user_info = UserInfo {
         username: username.clone(),
         first_name: first_name.clone(),
         last_name,
-        pass_hash: password,
+        pass_hash: HashableString::from(password),
         email: email.clone(),
     };
 
@@ -117,11 +118,6 @@ pub async fn handle_signup(
     let user = db_instance.create_user(user_info);
     // Generate random 32 bit verification token path
     let generated_token = generate_token();
-
-    // Hash token
-    //let verification_token = hash_string(&generated_token)
-    //    .await
-    //    .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
     let user = user
         .await
@@ -142,7 +138,7 @@ pub async fn handle_signup(
         )
     });
 
-    println!("Saving user to session: {}", user.username);
+    encrypt_log!("Saving user to session: {}", &user.username);
     Identity::login(&request.extensions(), user.username.into()).unwrap();
 
     Ok(())
@@ -160,9 +156,9 @@ pub async fn handle_change_password(
     let pass_result = db_instance
         .get_pass_hash_for_username(&username)
         .await
-        .map_err(|err| AuthError::InternalServerError(err.to_string()));
+        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
-    let verified_result = verify_hash(&current_password, &pass_result?);
+    let verified_result = pass_result.verify(current_password);
 
     // Check supplied current password is valid
     if verified_result.is_err() || !verified_result.unwrap() {
@@ -180,11 +176,6 @@ pub async fn handle_change_password(
     }
 
     encrypt_log!("Changing password for user: {}", &username);
-
-    // Hash new password
-    //let pass_hash = hash_string(&password)
-    //    .await
-    //    .expect("Error hashing password");
 
     // Store new password in database
     db_instance
@@ -207,7 +198,7 @@ pub async fn handle_reset_password(
 ) -> Result<(), AuthError> {
     println!("Requesting to reset password");
     // Verify reset token
-    let token_verification = verify_reset_token(&username, &reset_token, &db_instance)?;
+    let token_verification = verify_reset_token(&username, reset_token, &db_instance)?;
 
     // If token does not match or is no longer valid, return
     if !token_verification {
@@ -224,9 +215,6 @@ pub async fn handle_reset_password(
     if !check_valid_password(&password) {
         return Err(AuthError::InvalidPassword);
     }
-
-    // Hash new password
-    //let pass_hash = hash_field(&password).await.expect("Error hashing password");
 
     let username_arc = Arc::new(username);
     let db_arc = Arc::new(db_instance);
@@ -281,11 +269,6 @@ pub async fn handle_request_password_reset(
     // Generate random 32 bit reset token path
     let generated_token = generate_token();
 
-    // Hash token
-    //let reset_token = hash_string(&generated_token)
-    //    .await
-    //    .map_err(|_| AuthError::InternalServerError("Something went wrong".to_string()))?;
-
     // Save token hash to DB
     db_instance
         .save_reset_token_to_db(&username, &generated_token)
@@ -323,13 +306,14 @@ pub async fn handle_verify_user(
     println!("Attempting to verify user");
     // Verify reset token
     let token_verification =
-        verify_confirmation_token(&username, &verification_token, &db_instance)?;
+        verify_confirmation_token(&username, verification_token, &db_instance)?;
 
     // If token does not match or is no longer valid, return
     if !token_verification {
         return Err(AuthError::InvalidToken);
     }
 
+    // TODO: Combine these to one call
     db_instance
         .set_db_user_as_verified(&username)
         .map_err(|_| AuthError::InternalServerError("Something went wrong".to_string()))

@@ -1,4 +1,5 @@
 use crate::server::auth_functions::get_env_variable;
+use encryption_libs::EncryptableString;
 use lettre::message::header::{self};
 use lettre::message::{MultiPart, SinglePart};
 use lettre::transport::smtp::authentication::Credentials;
@@ -189,15 +190,21 @@ pub fn generate_new_oauth_client_body(
     .into_string()
 }
 
-pub fn send_email(email: &String, subject: String, email_body: String, first_name: &String) {
+pub fn send_email(
+    email: &EncryptableString,
+    subject: String,
+    email_body: String,
+    first_name: &String,
+) {
     use crate::server::auth_functions::get_env_variable;
 
     let from_email = get_env_variable("FROM_EMAIL").expect("FROM_EMAIL is unset!");
     let smtp_key = get_env_variable("SMTP_KEY").expect("SMTP_KEY is unset!");
     let app_name = get_env_variable("APP_NAME").expect("APP_NAME is unset!");
-    let email = Message::builder()
+    let plaintext_email = email.get_decrypted().to_string();
+    let generated_email = Message::builder()
         .from(format!("{app_name} <{from_email}>").parse().unwrap())
-        .to(format!("{first_name} <{email}>").parse().unwrap())
+        .to(format!("{first_name} <{plaintext_email}>").parse().unwrap())
         .subject(subject)
         .multipart(
             MultiPart::alternative() // This is composed of two parts.
@@ -225,7 +232,7 @@ pub fn send_email(email: &String, subject: String, email_body: String, first_nam
         .build();
 
     // Send the email
-    match mailer.send(&email) {
+    match mailer.send(&generated_email) {
         Ok(_) => println!("Email sent successfully!"),
         Err(e) => panic!("Could not send email: {e:?}"),
     }
