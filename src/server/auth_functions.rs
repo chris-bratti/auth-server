@@ -6,10 +6,6 @@ use encryption_libs::EncryptableString;
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 
 use actix_web::{web, Result};
-use argon2::{
-    password_hash::{PasswordHash, PasswordVerifier},
-    Argon2,
-};
 use dotenvy::dotenv;
 use redis::{Client, Commands};
 
@@ -69,17 +65,6 @@ pub async fn get_totp(
     get_totp_config(&username, &two_factor_token.get_decrypted())
         .generate_current()
         .map_err(|err| AuthError::InternalServerError(err.to_string()))
-}
-
-/// Verifies password against hash
-pub fn verify_hash(
-    password: &String,
-    password_hash: &String,
-) -> Result<bool, argon2::password_hash::Error> {
-    let parsed_hash = PasswordHash::new(&password_hash)?;
-    Ok(Argon2::default()
-        .verify_password(password.as_bytes(), &parsed_hash)
-        .is_ok())
 }
 
 /// Server side password strength validation
@@ -295,60 +280,11 @@ pub async fn approve_oauth_client(
 #[cfg(test)]
 mod test_auth {
 
-    use core::{assert_eq, assert_ne};
+    use core::assert_eq;
 
-    use encryption_libs::{decrypt_string, encrypt_string, hash_field, EncryptionKey};
-
-    use crate::server::auth_functions::{check_valid_password, verify_hash};
+    use crate::server::auth_functions::check_valid_password;
 
     use super::get_totp_config;
-
-    #[tokio::test]
-    async fn test_password_hashing() {
-        let password = "whatALovelyL!ttleP@s$w0rd".to_string();
-
-        let hashed_password = hash_field(&password.clone());
-
-        assert!(hashed_password.is_ok());
-
-        let hashed_password = hashed_password.unwrap();
-
-        assert_ne!(password, hashed_password);
-
-        let pass_match = verify_hash(&password, &hashed_password);
-
-        assert!(pass_match.is_ok());
-
-        assert_eq!(pass_match.unwrap(), true);
-    }
-
-    #[tokio::test]
-    async fn test_email_encryption() {
-        let email = String::from("test@test.com");
-        let encrypted_email =
-            encrypt_string(&email, EncryptionKey::SmtpKey).expect("There was an error encrypting");
-
-        assert_ne!(encrypted_email, email);
-
-        let decrypted_email = decrypt_string(&encrypted_email, EncryptionKey::SmtpKey)
-            .expect("There was an error decrypting");
-
-        assert_eq!(email, decrypted_email);
-    }
-
-    #[tokio::test]
-    async fn test_log_encryption() {
-        let username = String::from("testuser123");
-        let encrypted_username = encrypt_string(&username, EncryptionKey::LoggerKey)
-            .expect("There was an error encrypting!");
-
-        assert_ne!(encrypted_username, username);
-
-        let decrypted_username = decrypt_string(&encrypted_username, EncryptionKey::LoggerKey)
-            .expect("There was an error decrypting!");
-
-        assert_eq!(username, decrypted_username);
-    }
 
     #[test]
     fn test_password_validation() {

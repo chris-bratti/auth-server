@@ -22,6 +22,8 @@ use std::{
 };
 use zeroize::{Zeroize, Zeroizing};
 
+pub mod encryption_tests;
+
 #[macro_export]
 macro_rules! encrypt_log {
     ($fmt:expr, $($arg:tt)*) => {
@@ -181,7 +183,7 @@ impl EncryptableString {
     }
 
     pub fn eq_encrypted(&self, val: &String) -> bool {
-        &self.encrypted_value == val
+        self.get_decrypted().to_string() == decrypt_string(val, EncryptionKey::SmtpKey).unwrap()
     }
 
     pub fn eq_decrypted(&self, val: &String) -> bool {
