@@ -1,5 +1,5 @@
 use actix_web::web;
-use encryption_libs::{encrypt_log, encrypt_string, EncryptionKey};
+use encryption_libs::encrypt_log;
 use redis::{Client, Commands};
 
 use crate::{
