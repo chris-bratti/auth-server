@@ -65,7 +65,7 @@ jobs:
         working-directory: rec_temp
         
       - name: Test
-        run: cargo test --verbose --features ssr
+        run: cargo test --verbose --workspace --features ssr
         working-directory: rec_temp
 
       - name: Cleanup

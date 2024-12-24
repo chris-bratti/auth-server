@@ -15,7 +15,7 @@ use diesel::{
 };
 use dotenvy::dotenv;
 use quote::{ToTokens, quote};
-use redis::{FromRedisValue, RedisResult, ToRedisArgs};
+use redis::{FromRedisValue, ToRedisArgs};
 use serde::{Deserialize, Serialize};
 use std::{
     env,
