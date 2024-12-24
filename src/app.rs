@@ -19,38 +19,38 @@ pub fn App() -> impl IntoView {
     provide_meta_context();
 
     view! {
-        <Stylesheet id="leptos" href="/pkg/auth_server.css"/>
+        <Stylesheet id="leptos" href="/pkg/auth_server.css" />
         <Stylesheet
             id="boostrap"
             href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
         />
 
         // sets the document title
-        <Title text="Welcome to Auth Leptos"/>
+        <Title text="Welcome to Auth Leptos" />
 
         // content for this welcome page
         <body class="dark-mode">
             <Router>
                 <main>
                     <Routes>
-                        <Route path="" view=HomePage/>
+                        <Route path="" view=HomePage />
                         <Route
                             path="/user"
                             view=|| {
                                 view! {
                                     <UserVerificationWrapper>
-                                        <UserProfile/>
+                                        <UserProfile />
                                     </UserVerificationWrapper>
                                 }
                             }
                         />
-                        <Route path="/login" view=Login/>
-                        <Route path="/signup" view=Signup/>
-                        <Route path="/admin" view=AdminPage/>
-                        <Route path="/forgotpassword" view=ForgotPassword/>
-                        <Route path="/reset/:generated_id" view=ResetPassword/>
-                        <Route path="/verify/:generated_id" view=Verify/>
-                        <Route path="/*any" view=NotFound/>
+                        <Route path="/login" view=Login />
+                        <Route path="/signup" view=Signup />
+                        <Route path="/admin" view=AdminPage />
+                        <Route path="/forgotpassword" view=ForgotPassword />
+                        <Route path="/reset/:generated_id" view=ResetPassword />
+                        <Route path="/verify/:generated_id" view=Verify />
+                        <Route path="/*any" view=NotFound />
                     </Routes>
                 </main>
             </Router>
@@ -89,9 +89,9 @@ pub fn LoggedIn(children: ChildrenFn) -> impl IntoView {
     let user_is_logged_in =
         move || user_result.get().is_some() && user_result.get().unwrap().is_ok();
     let user_is_verified = move || user_result.get().unwrap().unwrap().verified;
-    let logged_in_fallback = || view! { <NotLoggedIn/> };
+    let logged_in_fallback = || view! { <NotLoggedIn /> };
     let verified_fallback = || {
-        view! { <NotVerified/> }
+        view! { <NotVerified /> }
     };
     view! {
         <Suspense fallback=|| {
@@ -135,7 +135,7 @@ pub fn UserProfile() -> impl IntoView {
             if update_password.get() {
                 view! {
                     <div class="container">
-                        <ChangePassword username=user.get().username/>
+                        <ChangePassword username=user.get().username />
                         <button class="button" on:click=move |_| { set_update_password(false) }>
 
                             Cancel
@@ -146,7 +146,11 @@ pub fn UserProfile() -> impl IntoView {
             } else if enable_two_factor.get() {
                 view! {
                     <div class="container">
-                        <EnableTwoFactor user=user set_user=set_user set_enable_two_factor=set_enable_two_factor/>
+                        <EnableTwoFactor
+                            user=user
+                            set_user=set_user
+                            set_enable_two_factor=set_enable_two_factor
+                        />
                         <button class="button" on:click=move |_| { set_enable_two_factor(false) }>
                             Cancel
                         </button>
@@ -207,7 +211,9 @@ pub fn UserProfile() -> impl IntoView {
                                 <A class="button" href="/">
                                     "Home"
                                 </A>
-                                <button class="button" on:click=move |_| logout.dispatch(Logout{})>"Logout"</button>
+                                <button class="button" on:click=move |_| logout.dispatch(Logout {})>
+                                    "Logout"
+                                </button>
                             </div>
                         </div>
                     </div>
