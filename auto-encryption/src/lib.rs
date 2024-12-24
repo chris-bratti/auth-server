@@ -33,37 +33,10 @@ pub fn encryptable(input: TokenStream) -> TokenStream {
             let field_name = field.ident.unwrap();
 
             if let syn::Type::Path(type_path) = &field.ty {
-                if type_path.path.segments.last().unwrap().ident == "EncryptableString" {
-                    for attr in field.attrs {
-                        if attr.path().is_ident("encrypted") {
-                            let args: EncryptedArgs = attr.parse_args().unwrap();
-                            let encryption_key_string =
-                                args.key.segments.last().unwrap().ident.to_string();
-
-                            let encryption_key = EncryptionKey::from(&encryption_key_string);
-
-                            encrypt_fields.push(quote! {
-                                if !self.#field_name.encrypted{
-                                    self.#field_name.value = encryption_libs::encrypt_string(&self.#field_name.value, #encryption_key).unwrap();
-                                    self.#field_name.encrypted = true;
-                                }
-                            });
-
-                            decrypt_fields.push(quote! {
-                                if self.#field_name.encrypted{
-                                    self.#field_name.value = encryption_libs::decrypt_string(&self.#field_name.value, #encryption_key).unwrap();
-                                    self.#field_name.encrypted = false;
-                                }
-                            });
-                        }
-                    }
-                } else if type_path.path.segments.last().unwrap().ident == "String" {
-                    eprintln!("In String!");
+                if type_path.path.segments.last().unwrap().ident == "String" {
                     for attr in field.attrs {
                         if attr.path().is_ident("hashed") {
-                            eprintln!("Should have made it here too");
                             encrypt_fields.push(quote! {
-                                println!("Encrypting field: {}", stringify!(#field_name));
                                 self.#field_name = encryption_libs::hash_field(&self.#field_name).unwrap();
                             });
                         } else if attr.path().is_ident("encrypted") {
@@ -80,33 +53,6 @@ pub fn encryptable(input: TokenStream) -> TokenStream {
                             decrypt_fields.push(quote! {
                                 self.#field_name = encryption_libs::decrypt_string(&self.#field_name, #encryption_key).unwrap();
                             });
-                        }
-                    }
-                }
-            } else if let syn::Type::Reference(reference) = &field.ty {
-                if let syn::Type::Path(type_path) = &*reference.elem {
-                    let last_segment = type_path.path.segments.last().unwrap();
-                    if last_segment.ident == "String" {
-                        for attr in field.attrs {
-                            if attr.path().is_ident("hashed") {
-                                encrypt_fields.push(quote! {
-                                    self.#field_name = &encryption_libs::hash_field(&self.#field_name.to_string()).unwrap();
-                                });
-                            } else if attr.path().is_ident("encrypted") {
-                                let args: EncryptedArgs = attr.parse_args().unwrap();
-                                let encryption_key_string =
-                                    args.key.segments.last().unwrap().ident.to_string();
-
-                                let encryption_key = EncryptionKey::from(&encryption_key_string);
-
-                                encrypt_fields.push(quote! {
-                                    self.#field_name = &encryption_libs::encrypt_string(&self.#field_name.to_string(), #encryption_key).unwrap().to_owned();
-                                });
-
-                                decrypt_fields.push(quote! {
-                                    self.#field_name = &encryption_libs::decrypt_string(&self.#field_name.to_string(), #encryption_key).unwrap().to_owned();
-                                });
-                            }
                         }
                     }
                 }
