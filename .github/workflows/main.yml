@@ -44,6 +44,10 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.PAT }}
+          fetch-depth: 0
+          ref: master
 
       - name: Increment Version
         id: bump-version
@@ -51,19 +55,17 @@ jobs:
           current_version=$(grep '^version' Cargo.toml | head -n 1 | sed 's/version = "//' | sed 's/"//')
           echo "Current version: $current_version"
 
-          new_version=$(echo "$version" | awk -F '[./]' '{ printf "%d.%d.%d\n", $1, $2, $3+1 }')
+          new_version=$(echo "$current_version" | awk -F '[./]' '{ printf "%d.%d.%d\n", $1, $2, $3+1 }')
           echo "New version: $new_version"
 
-          # Update Cargo.toml
           sed -i "s/^version = \".*\"/version = \"$new_version\"/" Cargo.toml
 
-          # Output new version
-          echo "::set-output name=new_version::$new_version"
+          echo "new_version=$new_version" >> $GITHUB_ENV
 
       - name: Commit and Push
         run: |
           git config --local user.name "github-actions[bot]"
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git add Cargo.toml
-          git commit -m "[Workflow] Version bump to ${{ steps.bump-version.outputs.new_version }}"
-          git push
+          git commit -m "[UpdateBot] Version bump to ${{ env.new_version }}"
+          git push origin HEAD:master
