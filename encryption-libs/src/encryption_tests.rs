@@ -27,12 +27,12 @@ pub mod test_encryption {
     #[test]
     fn test_field_encryption() {
         let email = String::from("test@test.com");
-        let encrypted_email =
-            encrypt_string(&email, EncryptionKey::SmtpKey).expect("There was an error encrypting");
+        let encrypted_email = encrypt_string(&email, EncryptionKey::DatabaseEncryption)
+            .expect("There was an error encrypting");
 
         assert_ne!(encrypted_email, email);
 
-        let decrypted_email = decrypt_string(&encrypted_email, EncryptionKey::SmtpKey)
+        let decrypted_email = decrypt_string(&encrypted_email, EncryptionKey::DatabaseEncryption)
             .expect("There was an error decrypting");
 
         assert_eq!(email, decrypted_email);
@@ -43,7 +43,7 @@ pub mod test_encryption {
         let unencrypted_val = String::from("sensitiveValue");
 
         let encrypted_string =
-            encrypt_string(&unencrypted_val, crate::EncryptionKey::SmtpKey).unwrap();
+            encrypt_string(&unencrypted_val, crate::EncryptionKey::DatabaseEncryption).unwrap();
 
         let encryptable_string = EncryptableString::from(&unencrypted_val);
 
@@ -54,7 +54,7 @@ pub mod test_encryption {
 
         // Manually decrypt and check encryptable_string decryption
         let decrypted_string =
-            decrypt_string(&encrypted_string, crate::EncryptionKey::SmtpKey).unwrap();
+            decrypt_string(&encrypted_string, crate::EncryptionKey::DatabaseEncryption).unwrap();
 
         assert_eq!(
             decrypted_string,

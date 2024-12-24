@@ -29,9 +29,8 @@ pub mod encryption_tests;
 macro_rules! encrypt_log {
     ($fmt:expr, $($arg:tt)*) => {
         {
-            let formatted_message = format!($fmt, $($arg)*);
-
-            let encrypted_value = encrypt_string($($arg)*, EncryptionKey::LoggerKey).unwrap();
+            use encryption_libs::{EncryptionKey, encrypt_string};
+            let encrypted_value = encrypt_string($($arg)*, EncryptionKey::LogKey).unwrap();
 
             println!($fmt, encrypted_value);
         }
@@ -41,10 +40,8 @@ macro_rules! encrypt_log {
 impl EncryptionKey {
     pub fn get(&self) -> String {
         let key = match self {
-            EncryptionKey::SmtpKey => "SMTP_ENCRYPTION_KEY",
-            EncryptionKey::TwoFactorKey => "TWO_FACTOR_KEY",
-            EncryptionKey::LoggerKey => "LOG_KEY",
-            EncryptionKey::OauthKey => "OAUTH_ENCRYPTION_KEY",
+            EncryptionKey::DatabaseEncryption => "DATABASE_ENCRYPTION_KEY",
+            EncryptionKey::LogKey => "LOG_KEY",
         };
 
         get_env_variable(key).expect("Encryption key is unset!")
@@ -54,10 +51,8 @@ impl EncryptionKey {
 impl ToTokens for EncryptionKey {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let token = match self {
-            EncryptionKey::SmtpKey => quote! { EncryptionKey::SmtpKey },
-            EncryptionKey::TwoFactorKey => quote! { EncryptionKey::TwoFactorKey },
-            EncryptionKey::LoggerKey => quote! { EncryptionKey::LoggerKey },
-            EncryptionKey::OauthKey => quote! { EncryptionKey::OauthKey },
+            EncryptionKey::DatabaseEncryption => quote! { EncryptionKey::DatabaseEncryption },
+            EncryptionKey::LogKey => quote! { EncryptionKey::LogKey },
         };
         tokens.extend(token);
     }
@@ -66,20 +61,16 @@ impl ToTokens for EncryptionKey {
 impl From<&String> for EncryptionKey {
     fn from(value: &String) -> Self {
         match value.to_lowercase().as_str() {
-            "smtpkey" => EncryptionKey::SmtpKey,
-            "twofactorkey" => EncryptionKey::TwoFactorKey,
-            "loggerkey" => EncryptionKey::LoggerKey,
-            "oauthkey" => EncryptionKey::OauthKey,
-            _ => EncryptionKey::TwoFactorKey,
+            "logkey" => EncryptionKey::LogKey,
+            "databaseencryption" => EncryptionKey::DatabaseEncryption,
+            _ => EncryptionKey::DatabaseEncryption,
         }
     }
 }
 
 pub enum EncryptionKey {
-    SmtpKey,
-    TwoFactorKey,
-    LoggerKey,
-    OauthKey,
+    LogKey,
+    DatabaseEncryption,
 }
 
 pub fn get_env_variable(variable: &str) -> Option<String> {
@@ -179,12 +170,14 @@ impl EncryptableString {
     }
 
     pub fn get_decrypted(&self) -> Zeroizing<String> {
-        let decrypted = decrypt_string(&self.encrypted_value, EncryptionKey::SmtpKey).unwrap();
+        let decrypted =
+            decrypt_string(&self.encrypted_value, EncryptionKey::DatabaseEncryption).unwrap();
         Zeroizing::new(decrypted)
     }
 
     pub fn eq_encrypted(&self, val: &String) -> bool {
-        self.get_decrypted().to_string() == decrypt_string(val, EncryptionKey::SmtpKey).unwrap()
+        self.get_decrypted().to_string()
+            == decrypt_string(val, EncryptionKey::DatabaseEncryption).unwrap()
     }
 
     pub fn eq_decrypted(&self, val: &String) -> bool {
@@ -194,7 +187,8 @@ impl EncryptableString {
 
 impl From<String> for EncryptableString {
     fn from(value: String) -> Self {
-        let encrypted_value = encrypt_string(&value.to_string(), EncryptionKey::SmtpKey).unwrap();
+        let encrypted_value =
+            encrypt_string(&value.to_string(), EncryptionKey::DatabaseEncryption).unwrap();
         EncryptableString { encrypted_value }
     }
 }
