@@ -10,7 +10,7 @@ services:
     ports:
       - 3000:3000
     volumes:
-      - ./certs:/app/certs
+      - path/to/certs:/app/certs
     environment:
       DATABASE_URL: postgres://${MASTER_USER}:${MASTER_PASS}@auth-postgres/${DATABASE_NAME}
       DATABASE_NAME: ${DATABASE_NAME}
