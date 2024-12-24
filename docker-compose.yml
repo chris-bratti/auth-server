@@ -1,4 +1,5 @@
 # Example docker-compose for running this project in docker!
+version: '3.3'
 
 services:
   auth-server:
@@ -15,21 +16,16 @@ services:
       DATABASE_NAME: ${DATABASE_NAME}
       FROM_EMAIL: ${FROM_EMAIL}
       SMTP_KEY: "${SMTP_KEY}"
-      TWO_FACTOR_KEY: "${TWO_FACTOR_KEY}"
-      SMTP_ENCRYPTION_KEY: "${SMTP_ENCRYPTION_KEY}"
+      DATABASE_ENCRYPTION_KEY: "${DATABASE_ENCRYPTION_KEY}"
       LOG_KEY: "${LOG_KEY}"
       REDIRECT_URL: ${REDIRECT_URL}
-      REDIS_CONNECTION_STRING: "redis://auth-redis:6379"
+      REDIS_CONNECTION_STRING: "${REDIS_CONNECTION_STRING}"
       ADMIN_KEY: "${ADMIN_KEY}"
-      APP_NAME: "${APP_NAME}"
-      JWT_KEY: "${JWT_KEY}"
       REDIS_KEY: "${REDIS_KEY}"
-      OAUTH_ENCRYPTION_KEY: "${OAUTH_ENCRYPTION_KEY}"
       SITE_ADDR: "${SITE_ADDR}"
+      APP_NAME: "${APP_NAME}"
     restart: unless-stopped
     depends_on:
-      redis:
-        condition: service_healthy
       db:
         condition: service_healthy
 
@@ -41,11 +37,9 @@ services:
     ports:
       - 6379:6379
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
+    volumes:
+      - ./redis.conf:/usr/local/etc/redis/redis.conf
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
 
   db:
     image: postgres:16

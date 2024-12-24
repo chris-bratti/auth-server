@@ -28,6 +28,8 @@ COPY end2end ./end2end
 COPY migrations ./migrations
 COPY src ./src
 COPY style ./style
+ADD auto-encryption /app/auto-encryption
+ADD encryption-libs /app/encryption-libs
 
 # Build the app
 RUN cargo leptos build --release -vv
