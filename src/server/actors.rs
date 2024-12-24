@@ -7,10 +7,7 @@ use redis::{Client, Commands};
 
 use crate::{db::models::OauthClient, AdminTask, AuthError};
 
-use super::{
-    auth_functions::decrypt_string,
-    smtp::{generate_new_oauth_client_body, send_email},
-};
+use super::smtp::{generate_new_oauth_client_body, send_email};
 
 const TASK_KEY: &str = "admin_tasks";
 
@@ -85,24 +82,15 @@ impl Handler<OAuthClientCreated> for EmailSubscriber {
 
     fn handle(&mut self, msg: OAuthClientCreated, _ctx: &mut Self::Context) -> Self::Result {
         Box::pin(async move {
-            let decrypted_secret =
-                decrypt_string(&msg.0.client_secret, crate::EncryptionKey::OauthKey)
-                    .await
-                    .unwrap();
-
-            let decrypted_email =
-                decrypt_string(&msg.0.contact_email, crate::EncryptionKey::SmtpKey)
-                    .await
-                    .unwrap();
             let email_body = generate_new_oauth_client_body(
                 &msg.0.app_name,
                 &msg.0.client_id,
-                &decrypted_secret,
+                &msg.0.client_secret.get_decrypted(),
                 &msg.0.redirect_url,
             );
 
             send_email(
-                &decrypted_email,
+                &msg.0.contact_email,
                 "OAuth Access".to_string(),
                 email_body,
                 &msg.0.app_name,

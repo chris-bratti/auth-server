@@ -2,6 +2,7 @@ use std::time::SystemTime;
 
 use crate::db::schema::*;
 use diesel::prelude::*;
+use encryption_libs::{EncryptableString, HashableString};
 
 #[derive(Queryable, Selectable, Identifiable, Debug)]
 #[diesel(table_name = crate::db::schema::admins)]
@@ -9,10 +10,10 @@ use diesel::prelude::*;
 pub struct AppAdmin {
     pub id: i32,
     pub username: String,
-    pub email: String,
-    pub pass_hash: String,
+    pub email: EncryptableString,
+    pub pass_hash: HashableString,
     pub initialized: bool,
-    pub two_factor_token: Option<String>,
+    pub two_factor_token: Option<EncryptableString>,
     pub locked: bool,
     pub pass_retries: Option<i32>,
     pub last_failed_attempt: Option<SystemTime>,
@@ -20,12 +21,12 @@ pub struct AppAdmin {
 
 #[derive(Insertable, Debug)]
 #[diesel(table_name = admins)]
-pub struct NewAppAdmin<'a> {
-    pub username: &'a str,
-    pub email: &'a str,
-    pub pass_hash: &'a str,
-    pub initialized: &'a bool,
-    pub locked: &'a bool,
+pub struct NewAppAdmin {
+    pub username: String,
+    pub email: EncryptableString,
+    pub pass_hash: HashableString,
+    pub initialized: bool,
+    pub locked: bool,
 }
 
 #[derive(Queryable, Selectable, Identifiable, Debug)]
@@ -36,11 +37,11 @@ pub struct DBUser {
     pub first_name: String,
     pub last_name: String,
     pub username: String,
-    pub email: String,
-    pub pass_hash: String,
+    pub email: EncryptableString,
+    pub pass_hash: HashableString,
     pub verified: bool,
     pub two_factor: bool,
-    pub two_factor_token: Option<String>,
+    pub two_factor_token: Option<EncryptableString>,
     pub locked: bool,
     pub pass_retries: Option<i32>,
     pub last_failed_attempt: Option<SystemTime>,
@@ -52,9 +53,9 @@ pub struct DBUser {
 pub struct OauthClient {
     pub id: i32,
     pub app_name: String,
-    pub contact_email: String,
+    pub contact_email: EncryptableString,
     pub client_id: String,
-    pub client_secret: String,
+    pub client_secret: EncryptableString,
     pub redirect_url: String,
     pub approved: bool,
 }
@@ -65,7 +66,7 @@ pub struct OauthClient {
 pub struct RefreshToken {
     pub client_id: i32,
     pub id: i32,
-    pub refresh_token: String,
+    pub refresh_token: EncryptableString,
     pub token_id: String,
     pub username: String,
     pub expiry: SystemTime,
@@ -75,7 +76,7 @@ pub struct RefreshToken {
 #[diesel(table_name = refresh_tokens)]
 pub struct NewRefreshToken<'a> {
     pub client_id: &'a i32,
-    pub refresh_token: &'a str,
+    pub refresh_token: EncryptableString,
     pub token_id: &'a str,
     pub username: &'a str,
     pub expiry: &'a SystemTime,
@@ -87,7 +88,7 @@ pub struct NewRefreshToken<'a> {
 pub struct DBResetToken {
     pub user_id: i32,
     pub id: i32,
-    pub reset_token: String,
+    pub reset_token: HashableString,
     pub reset_token_expiry: SystemTime,
 }
 
@@ -97,14 +98,14 @@ pub struct DBResetToken {
 pub struct DBVerificationToken {
     pub user_id: i32,
     pub id: i32,
-    pub confirm_token: String,
+    pub confirm_token: HashableString,
     pub confirm_token_expiry: SystemTime,
 }
 
 #[derive(Insertable, Debug)]
 #[diesel(table_name = verification_tokens)]
 pub struct NewDBVerificationToken<'a> {
-    pub confirm_token: &'a str,
+    pub confirm_token: HashableString,
     pub confirm_token_expiry: &'a SystemTime,
     pub user_id: &'a i32,
 }
@@ -112,7 +113,7 @@ pub struct NewDBVerificationToken<'a> {
 #[derive(Insertable, Debug)]
 #[diesel(table_name = password_reset_tokens)]
 pub struct NewDBResetToken<'a> {
-    pub reset_token: &'a str,
+    pub reset_token: HashableString,
     pub reset_token_expiry: &'a SystemTime,
     pub user_id: &'a i32,
 }
@@ -123,8 +124,8 @@ pub struct NewDBUser<'a> {
     pub first_name: &'a str,
     pub last_name: &'a str,
     pub username: &'a str,
-    pub email: &'a str,
-    pub pass_hash: &'a str,
+    pub email: EncryptableString,
+    pub pass_hash: HashableString,
     pub verified: &'a bool,
     pub two_factor: &'a bool,
     pub locked: &'a bool,
@@ -134,9 +135,9 @@ pub struct NewDBUser<'a> {
 #[diesel(table_name = oauth_clients)]
 pub struct NewOauthClient<'a> {
     pub app_name: &'a str,
-    pub contact_email: &'a str,
+    pub contact_email: EncryptableString,
     pub client_id: &'a str,
-    pub client_secret: &'a str,
+    pub client_secret: EncryptableString,
     pub redirect_url: &'a str,
     pub approved: &'a bool,
 }

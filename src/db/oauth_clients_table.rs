@@ -2,8 +2,8 @@ use super::db_helper::DbInstance;
 use super::models::{NewOauthClient, OauthClient};
 use super::DBError;
 use crate::db::schema::{self};
-use crate::server::auth_functions::encrypt_string;
 use diesel::prelude::*;
+use encryption_libs::EncryptableString;
 use schema::oauth_clients::dsl::*;
 
 impl DbInstance {
@@ -29,19 +29,11 @@ impl DbInstance {
     ) -> Result<OauthClient, DBError> {
         let mut connection = self.db_connection.connect()?;
 
-        let encrypted_email = encrypt_string(email, crate::EncryptionKey::SmtpKey)
-            .await
-            .unwrap();
-
-        let encrypted_secret = encrypt_string(c_secret, crate::EncryptionKey::OauthKey)
-            .await
-            .unwrap();
-
         let new_client = NewOauthClient {
             app_name: name,
-            contact_email: &encrypted_email,
+            contact_email: EncryptableString::from(email),
             client_id: c_id,
-            client_secret: &encrypted_secret,
+            client_secret: EncryptableString::from(c_secret),
             redirect_url: url,
             approved: &false,
         };
@@ -76,10 +68,7 @@ pub mod test_oauth_dbs {
 
     use serial_test::serial;
 
-    use crate::{
-        db::db_helper::DbInstance,
-        server::auth_functions::{decrypt_string, generate_token},
-    };
+    use crate::{db::db_helper::DbInstance, server::auth_functions::generate_token};
 
     use lazy_static::lazy_static;
 
@@ -102,14 +91,7 @@ pub mod test_oauth_dbs {
             .await
             .unwrap();
 
-        let unencrypted_secret = decrypt_string(
-            &returned_client.client_secret,
-            crate::EncryptionKey::OauthKey,
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(unencrypted_secret, c_secret);
+        assert!(returned_client.client_secret.eq_decrypted(&c_secret));
 
         //Approve client
         DB_INSTANCE.approve_oauth_client(&c_id).unwrap();
@@ -123,13 +105,8 @@ pub mod test_oauth_dbs {
 
         let read_client = read_client.unwrap();
 
-        let decrypted_email =
-            decrypt_string(&read_client.contact_email, crate::EncryptionKey::SmtpKey)
-                .await
-                .unwrap();
-
         assert_eq!(read_client.app_name, name);
-        assert_eq!(decrypted_email, email);
+        assert!(read_client.contact_email.eq_decrypted(&email));
         assert_eq!(read_client.client_id, c_id);
         assert_eq!(read_client.client_secret, returned_client.client_secret);
         assert_eq!(read_client.redirect_url, url);
@@ -175,7 +152,7 @@ pub mod test_oauth_dbs {
             .unwrap();
 
         // Verify token was saved correctly
-        assert_eq!(r_token, read_token);
+        assert!(read_token.eq_decrypted(&r_token));
 
         // Create and save new refresh token
         let new_r_token = generate_token();
@@ -193,7 +170,7 @@ pub mod test_oauth_dbs {
             .await
             .unwrap();
 
-        assert_eq!(new_r_token, read_token);
+        assert!(read_token.eq_decrypted(&new_r_token));
 
         // Clean up
         DB_INSTANCE.delete_refresh_token(&c_id, &uname).unwrap();
@@ -245,7 +222,7 @@ pub mod test_oauth_dbs {
             .await
             .unwrap();
 
-        assert_eq!(read_refresh_token, r_token);
+        assert!(read_refresh_token.eq_decrypted(&r_token));
 
         // Read second
         let second_read_refresh_token = DB_INSTANCE
@@ -253,7 +230,7 @@ pub mod test_oauth_dbs {
             .await
             .unwrap();
 
-        assert_eq!(second_read_refresh_token, second_token);
+        assert!(second_read_refresh_token.eq_decrypted(&second_token));
 
         // Update first
         let new_token = generate_token();
@@ -271,7 +248,7 @@ pub mod test_oauth_dbs {
             .await
             .unwrap();
 
-        assert_eq!(read_token, new_token);
+        assert!(read_token.eq_decrypted(&new_token));
 
         // Delete first
         let num_deleted = DB_INSTANCE.delete_refresh_token(&c_id, &uname).unwrap();

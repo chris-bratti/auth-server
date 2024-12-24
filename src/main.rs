@@ -27,7 +27,7 @@ cfg_if! {
         use actix_session::{config::PersistentSession, storage::RedisSessionStore, SessionMiddleware};
         use redis::{Client, Commands};
         use actix_files::Files;
-        use auth_server::{app::*, server::auth_functions::{validate_oauth_token, decrypt_string}, EncryptionKey};
+        use auth_server::{app::*, server::auth_functions::{validate_oauth_token}};
         use leptos::*;
         use leptos_actix::{generate_route_list, LeptosRoutes};
         use actix_web::{web, App, HttpServer, middleware::Logger, dev::{ServiceRequest},
@@ -51,6 +51,9 @@ cfg_if! {
         use regex::Regex;
 
         use lazy_static::lazy_static;
+        use auth_server::HtmlError;
+
+        use encryption_libs::EncryptableString;
 
         lazy_static! {
             static ref SITE_ADDR: String = get_env_variable("SITE_ADDR").unwrap();
@@ -97,7 +100,7 @@ cfg_if! {
                 if !path_pattern.is_match(req.path()) {
                     // Verifies source matches site address
                     if req.connection_info().host().to_string() != SITE_ADDR.to_string() {
-                        return Box::pin(async move { Err(Error::from(AuthError::Forbidden)) });
+                        return Box::pin(async move { Err(Error::from(HtmlError::Forbidden)) });
                     }
                 }
 
@@ -124,11 +127,11 @@ cfg_if! {
             let mut con = redis_client.get_connection().unwrap();
 
             // Get cached secret and validate
-            let stored_key: Option<String> = con.hget("oauth_clients", &client_id).unwrap();
+            let stored_key: Option<EncryptableString> = con.hget("oauth_clients", &client_id).unwrap();
 
             let stored_key = stored_key.ok_or_else(|| AuthError::InvalidToken).unwrap();
 
-            if secret.to_string() != decrypt_string(&stored_key, EncryptionKey::OauthKey).await.unwrap() {
+            if !stored_key.eq_decrypted(&secret.to_string()){
                 return Err((actix_web::error::ErrorUnauthorized("Invalid client info"), req));
             }
 
@@ -213,6 +216,9 @@ async fn main() -> std::io::Result<()> {
     // Leptos connection stuff, sets site address information
     let conf = get_configuration(None).await.unwrap();
     let addr = conf.leptos_options.site_addr;
+    let mut leptos_options = conf.leptos_options;
+    // Sets the web socket protocol to use SSL
+    leptos_options.reload_ws_protocol = "wss".into();
 
     // Generate the list of routes in your Leptos App
     let routes = generate_route_list(App);
@@ -243,7 +249,6 @@ async fn main() -> std::io::Result<()> {
         .unwrap();
 
     HttpServer::new(move || {
-        let leptos_options = &conf.leptos_options;
         let site_root = &leptos_options.site_root;
         App::new()
             // Logger middleware
@@ -321,7 +326,7 @@ async fn get_user_info(
 
     Ok(HttpResponse::Ok().json(UserInfoResponse {
         success: true,
-        user_data: user,
+        user_data: user.into(),
         timestamp: chrono::Utc::now().timestamp(),
     }))
 }

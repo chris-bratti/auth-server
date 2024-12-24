@@ -93,7 +93,7 @@ pub async fn handle_refresh_token(
         .get_username_from_refresh_token(&client_id, &token_id.to_string())
         .await?;
 
-    if stored_token != provided_token {
+    if !stored_token.eq_decrypted(&provided_token.to_string()) {
         return Err(AuthError::InvalidCredentials);
     }
 

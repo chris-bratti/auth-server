@@ -2,24 +2,15 @@ use core::{option::Option::None, result::Result::Ok};
 use std::{collections::HashMap, env};
 
 use chrono::{DateTime, Utc};
+use encryption_libs::EncryptableString;
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 
 use actix_web::{web, Result};
-use aes_gcm::{
-    aead::{Aead, AeadCore, KeyInit},
-    Aes256Gcm,
-    Key, // Or `Aes128Gcm`
-    Nonce,
-};
-use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
-    Argon2,
-};
 use dotenvy::dotenv;
 use redis::{Client, Commands};
 
 use crate::{db::db_helper::DbInstance, Claims};
-use crate::{AuthError, EncryptionKey, OauthClaims};
+use crate::{AuthError, OauthClaims};
 use totp_rs::{Algorithm, Secret, TOTP};
 
 use regex::Regex;
@@ -67,37 +58,13 @@ pub async fn create_2fa_for_user(username: &String) -> Result<(String, String), 
     Ok((qr_code, token))
 }
 
-pub async fn get_totp(username: &String, two_factor_token: &String) -> Result<String, AuthError> {
-    let decrypted_token = decrypt_string(&two_factor_token, EncryptionKey::TwoFactorKey)
-        .await
-        .expect("Error decrypting string!");
-    get_totp_config(&username, &decrypted_token)
+pub async fn get_totp(
+    username: &String,
+    two_factor_token: &EncryptableString,
+) -> Result<String, AuthError> {
+    get_totp_config(&username, &two_factor_token.get_decrypted())
         .generate_current()
         .map_err(|err| AuthError::InternalServerError(err.to_string()))
-}
-
-/// Hash password with Argon2
-pub async fn hash_string(password: &String) -> Result<String, argon2::password_hash::Error> {
-    let salt = SaltString::generate(&mut OsRng);
-
-    let argon2 = Argon2::default();
-
-    let password_hash = argon2
-        .hash_password(password.as_bytes(), &salt)?
-        .to_string();
-
-    Ok(password_hash)
-}
-
-/// Verifies password against hash
-pub fn verify_hash(
-    password: &String,
-    password_hash: &String,
-) -> Result<bool, argon2::password_hash::Error> {
-    let parsed_hash = PasswordHash::new(&password_hash)?;
-    Ok(Argon2::default()
-        .verify_password(password.as_bytes(), &parsed_hash)
-        .is_ok())
 }
 
 /// Server side password strength validation
@@ -131,68 +98,30 @@ pub fn generate_token() -> String {
 
 pub fn verify_reset_token(
     username: &String,
-    reset_token: &String,
+    reset_token: String,
     db: &web::Data<DbInstance>,
 ) -> Result<bool, AuthError> {
     let token_hash = db
         .get_reset_hash(username)
         .map_err(|err| AuthError::Error(err.to_string()))?;
 
-    verify_hash(reset_token, &token_hash).map_err(|_| AuthError::InvalidToken)
+    token_hash
+        .verify(reset_token)
+        .map_err(|_| AuthError::InvalidToken)
 }
 
 pub fn verify_confirmation_token(
     username: &String,
-    confirmation_token: &String,
+    confirmation_token: String,
     db: &web::Data<DbInstance>,
 ) -> Result<bool, AuthError> {
     let verification_hash = db
         .get_verification_hash(username)
         .map_err(|_| AuthError::InvalidToken)?;
 
-    verify_hash(confirmation_token, &verification_hash).map_err(|_| AuthError::InvalidToken)
-}
-
-pub async fn encrypt_string(
-    data: &String,
-    encryption_key: EncryptionKey,
-) -> Result<String, aes_gcm::Error> {
-    let encryption_key = encryption_key.get();
-
-    let key = Key::<Aes256Gcm>::from_slice(&encryption_key.as_bytes());
-
-    let cipher = Aes256Gcm::new(&key);
-    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
-    let ciphertext = cipher.encrypt(&nonce, data.as_bytes())?;
-
-    let mut encrypted_data: Vec<u8> = nonce.to_vec();
-    encrypted_data.extend_from_slice(&ciphertext);
-
-    let output = hex::encode(encrypted_data);
-    Ok(output)
-}
-
-pub async fn decrypt_string(
-    encrypted: &String,
-    encryption_key: EncryptionKey,
-) -> Result<String, aes_gcm::Error> {
-    let encryption_key = encryption_key.get();
-
-    let encrypted_data = hex::decode(encrypted).expect("failed to decode hex string into vec");
-
-    let key = Key::<Aes256Gcm>::from_slice(encryption_key.as_bytes());
-
-    // 12 digit nonce is prepended to encrypted data. Split nonce from encrypted email
-    let (nonce_arr, ciphered_data) = encrypted_data.split_at(12);
-    let nonce = Nonce::from_slice(nonce_arr);
-
-    let cipher = Aes256Gcm::new(key);
-
-    let plaintext = cipher
-        .decrypt(nonce, ciphered_data)
-        .expect("failed to decrypt data");
-
-    Ok(String::from_utf8(plaintext).expect("failed to convert vector of bytes to string"))
+    verification_hash
+        .verify(confirmation_token)
+        .map_err(|_| AuthError::InvalidToken)
 }
 
 pub async fn generate_oauth_token(
@@ -303,7 +232,7 @@ pub async fn validate_pending_token(
 
 pub async fn load_oauth_clients(
     db: &web::Data<DbInstance>,
-) -> Result<HashMap<String, (String, String)>, AuthError> {
+) -> Result<HashMap<String, (EncryptableString, String)>, AuthError> {
     let clients = db
         .get_oauth_clients()
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?
@@ -351,65 +280,11 @@ pub async fn approve_oauth_client(
 #[cfg(test)]
 mod test_auth {
 
-    use core::{assert_eq, assert_ne};
+    use core::assert_eq;
 
-    use crate::{
-        server::auth_functions::{check_valid_password, decrypt_string, verify_hash},
-        EncryptionKey,
-    };
+    use crate::server::auth_functions::check_valid_password;
 
-    use super::{encrypt_string, get_totp_config, hash_string};
-
-    #[tokio::test]
-    async fn test_password_hashing() {
-        let password = "whatALovelyL!ttleP@s$w0rd".to_string();
-
-        let hashed_password = hash_string(&password.clone()).await;
-
-        assert!(hashed_password.is_ok());
-
-        let hashed_password = hashed_password.unwrap();
-
-        assert_ne!(password, hashed_password);
-
-        let pass_match = verify_hash(&password, &hashed_password);
-
-        assert!(pass_match.is_ok());
-
-        assert_eq!(pass_match.unwrap(), true);
-    }
-
-    #[tokio::test]
-    async fn test_email_encryption() {
-        let email = String::from("test@test.com");
-        let encrypted_email = encrypt_string(&email, EncryptionKey::SmtpKey)
-            .await
-            .expect("There was an error encrypting");
-
-        assert_ne!(encrypted_email, email);
-
-        let decrypted_email = decrypt_string(&encrypted_email, EncryptionKey::SmtpKey)
-            .await
-            .expect("There was an error decrypting");
-
-        assert_eq!(email, decrypted_email);
-    }
-
-    #[tokio::test]
-    async fn test_log_encryption() {
-        let username = String::from("testuser123");
-        let encrypted_username = encrypt_string(&username, EncryptionKey::LoggerKey)
-            .await
-            .expect("There was an error encrypting!");
-
-        assert_ne!(encrypted_username, username);
-
-        let decrypted_username = decrypt_string(&encrypted_username, EncryptionKey::LoggerKey)
-            .await
-            .expect("There was an error decrypting!");
-
-        assert_eq!(username, decrypted_username);
-    }
+    use super::get_totp_config;
 
     #[test]
     fn test_password_validation() {

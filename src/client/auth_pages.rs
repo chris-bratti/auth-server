@@ -10,6 +10,12 @@ use leptos_router::*;
 static PASSWORD_PATTERN: &str =
     "^.*(?=.{8,}).*(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@!:#$^;%&?]).+$";
 
+#[derive(Clone)]
+struct OauthContext {
+    pub client_id: Signal<Option<String>>,
+    pub state: Signal<Option<String>>,
+}
+
 #[component]
 pub fn Login() -> impl IntoView {
     let oauth_query = use_query::<OAuthRequest>();
@@ -41,6 +47,12 @@ pub fn Login() -> impl IntoView {
        <Suspense fallback=|| {
            view! { <h1>Loading....</h1> }
        }>
+            {{
+                 provide_context(OauthContext {
+                     client_id,
+                     state,
+                })
+            }}
            <Show when=user_is_logged_in fallback=log_user_in>
 
                {{
@@ -55,24 +67,8 @@ pub fn Login() -> impl IntoView {
 
 #[component]
 pub fn Auth() -> impl IntoView {
-    let oauth_query = use_query::<OAuthRequest>();
-
-    let client_id = Signal::derive(move || {
-        oauth_query.with(|query: &Result<OAuthRequest, ParamsError>| {
-            query
-                .as_ref()
-                .map(|query: &OAuthRequest| query.client_id.clone())
-                .unwrap_or(None)
-        })
-    });
-    let state = Signal::derive(move || {
-        oauth_query.with(|query| {
-            query
-                .as_ref()
-                .map(|query| query.state.clone())
-                .unwrap_or(None)
-        })
-    });
+    let oauth_context = expect_context::<OauthContext>();
+    let OauthContext { client_id, state } = oauth_context.into();
 
     // Uses Login server function
     let login = create_server_action::<Login>();
@@ -737,13 +733,16 @@ pub fn ChangePassword(username: String) -> impl IntoView {
                     let data = UpdatePassword::from_event(&ev);
                     if data.is_err() {
                         ev.prevent_default();
+                        leptos::logging::warn!("There was an error {:#?}", data)
                     } else {
                         let data_values = data.unwrap();
-                        if data_values.password != data_values.confirm_password {
+                        if data_values.new_password != data_values.confirm_password {
+                            leptos::logging::warn!("Passwords didn't match");
                             set_passwords_match(false);
                             ev.prevent_default();
                         }
-                        if data_values.password == data_values.current_password {
+                        if data_values.new_password == data_values.current_password {
+                            leptos::logging::warn!("Matches current password");
                             set_old_pass_used(true);
                             ev.prevent_default();
                         }
@@ -772,7 +771,7 @@ pub fn ChangePassword(username: String) -> impl IntoView {
                             name="new_password"
                             required=true
                             minLength=8
-                            maxLength=16
+                            maxLength=24
                             pattern=PASSWORD_PATTERN
                             placeholder="New Password"
                         />
@@ -783,19 +782,16 @@ pub fn ChangePassword(username: String) -> impl IntoView {
                         <input
                             class="form-control"
                             type="password"
-                            name="confirm_new_password"
+                            name="confirm_password"
                             required=true
                             minLength=8
-                            maxLength=16
+                            maxLength=24
                             pattern=PASSWORD_PATTERN
                             placeholder="Confirm Password"
                         />
                     </label>
                 </div>
                 <input class="btn btn-primary" type="submit" value="Update Password"/>
-                <A class="forgot-password-btn" href="/user">
-                    "To user"
-                </A>
             </ActionForm>
             {move || {
                 if !passwords_match.get() {

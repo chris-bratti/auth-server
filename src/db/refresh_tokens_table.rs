@@ -1,11 +1,11 @@
 use super::db_helper::DbInstance;
-use super::models::{NewRefreshToken, OauthClient};
+use super::models::{NewRefreshToken, OauthClient, RefreshToken};
 use super::schema::{oauth_clients, refresh_tokens};
 use super::DBError;
 use crate::db::schema::{self};
-use crate::server::auth_functions::{decrypt_string, encrypt_string};
 use diesel::dsl::select;
 use diesel::prelude::*;
+use encryption_libs::EncryptableString;
 use schema::refresh_tokens::dsl::*;
 use std::time::Duration;
 
@@ -40,13 +40,9 @@ impl DbInstance {
             .checked_add(Duration::new(604800, 0))
             .expect("Error parsing time");
 
-        let encrypted_token = encrypt_string(r_token, crate::EncryptionKey::OauthKey)
-            .await
-            .unwrap();
-
         let new_refresh_token = NewRefreshToken {
             client_id: &oauth_client.id,
-            refresh_token: &encrypted_token,
+            refresh_token: EncryptableString::from(r_token),
             token_id: t_id,
             username: uname,
             expiry: &token_expiry,
@@ -61,47 +57,41 @@ impl DbInstance {
         &self,
         c_id: &String,
         r_id: &String,
-    ) -> Result<(String, String), DBError> {
+    ) -> Result<(EncryptableString, String), DBError> {
         let mut con = self.db_connection.connect()?;
 
         let now = select(diesel::dsl::now).get_result::<std::time::SystemTime>(&mut con)?;
 
-        let (stored_token, uname, expiration): (String, String, std::time::SystemTime) =
-            refresh_tokens
-                .inner_join(oauth_clients::table)
-                .filter(
-                    oauth_clients::client_id
-                        .eq(c_id)
-                        .and(refresh_tokens::token_id.eq(r_id)),
-                )
-                .limit(1)
-                .select((refresh_token, username, expiry))
-                .first(&mut con)
-                .optional()?
-                .ok_or_else(|| DBError::NotFound("Refresh token for client id".to_string()))?;
+        let token: RefreshToken = refresh_tokens
+            .inner_join(oauth_clients::table)
+            .filter(
+                oauth_clients::client_id
+                    .eq(c_id)
+                    .and(refresh_tokens::token_id.eq(r_id)),
+            )
+            .limit(1)
+            .select(RefreshToken::as_returning())
+            .first(&mut con)
+            .optional()?
+            .ok_or_else(|| DBError::NotFound("Refresh token for client id".to_string()))?;
 
-        if now > expiration {
+        if now > token.expiry {
             return Err(DBError::TokenExpired);
         }
 
-        Ok((
-            decrypt_string(&stored_token, crate::EncryptionKey::OauthKey)
-                .await
-                .unwrap(),
-            uname,
-        ))
+        Ok((token.refresh_token, token.username))
     }
 
     pub async fn get_refresh_token_from_id(
         &self,
         c_id: &String,
         uname: &String,
-    ) -> Result<String, DBError> {
+    ) -> Result<EncryptableString, DBError> {
         let mut con = self.db_connection.connect()?;
 
         let now = select(diesel::dsl::now).get_result::<std::time::SystemTime>(&mut con)?;
 
-        let token_data: Option<(String, std::time::SystemTime)> = refresh_tokens
+        let token: RefreshToken = refresh_tokens
             .inner_join(oauth_clients::table)
             .filter(
                 oauth_clients::client_id
@@ -109,23 +99,16 @@ impl DbInstance {
                     .and(refresh_tokens::username.eq(uname)),
             )
             .limit(1)
-            .select((refresh_token, expiry))
+            .select(RefreshToken::as_returning())
             .first(&mut con)
-            .optional()?;
+            .optional()?
+            .ok_or_else(|| DBError::NotFound(c_id.clone()))?;
 
-        let (token, expiration) = token_data
-            .ok_or_else(|| DBError::NotFound(c_id.clone()))?
-            .into();
-
-        if now > expiration {
+        if now > token.expiry {
             return Err(DBError::TokenExpired);
         }
 
-        let decrypted_token = decrypt_string(&token, crate::EncryptionKey::OauthKey)
-            .await
-            .map_err(|err| DBError::Error(err.to_string()))?;
-
-        Ok(decrypted_token)
+        Ok(token.refresh_token)
     }
 
     pub async fn update_refresh_token(
@@ -151,13 +134,9 @@ impl DbInstance {
             .optional()?
             .ok_or_else(|| DBError::NotFound(c_id.clone()))?;
 
-        let encrypted_token = encrypt_string(new_token, crate::EncryptionKey::OauthKey)
-            .await
-            .unwrap();
-
         diesel::update(refresh_tokens.filter(client_id.eq(client.id).and(username.eq(uname))))
             .set((
-                refresh_token.eq(encrypted_token),
+                refresh_token.eq(EncryptableString::from(new_token)),
                 expiry.eq(token_expiry),
                 token_id.eq(new_token_id),
             ))

@@ -1,10 +1,9 @@
 use actix_web::web;
+use encryption_libs::encrypt_log;
 use redis::{Client, Commands};
 
 use crate::{
-    db::db_helper::DbInstance,
-    server::auth_functions::{check_valid_password, encrypt_string},
-    AdminTask, AuthError, EncryptionKey,
+    db::db_helper::DbInstance, server::auth_functions::check_valid_password, AdminTask, AuthError,
 };
 
 pub async fn handle_signup_admin(
@@ -27,12 +26,7 @@ pub async fn handle_signup_admin(
     // Usernames should case insensitive
     let username: String = username.trim().to_lowercase();
 
-    println!(
-        "Creating new admin: {}",
-        encrypt_string(&username, EncryptionKey::LoggerKey)
-            .await
-            .expect("Error encrypting username")
-    );
+    encrypt_log!("Creating new admin{}", &username);
 
     db_instance
         .create_admin(&username, &password, email)

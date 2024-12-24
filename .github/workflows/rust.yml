@@ -26,11 +26,10 @@ jobs:
           
       - name: Init env file
         run: |
-          echo "SMTP_ENCRYPTION_KEY=\"${{ secrets.ENCRYPTION_KEY }}\"" > .env
+          echo "DATABASE_ENCRYPTION_KEY=\"${{ secrets.ENCRYPTION_KEY }}\"" > .env
           echo "LOG_KEY=\"${{ secrets.ENCRYPTION_KEY }}\"" >> .env
           echo "REDIRECT_URL=http://localhost:3000/" >> .env
           echo "ADMIN_KEY=\"${{ secrets.ENCRYPTION_KEY }}\"" >> .env
-          echo "OAUTH_ENCRYPTION_KEY=\"${{ secrets.ENCRYPTION_KEY }}\"" >> .env
           echo "APP_NAME=test" >> .env
           mkdir certs
           echo "test" > certs/private.pem
@@ -65,7 +64,7 @@ jobs:
         working-directory: rec_temp
         
       - name: Test
-        run: cargo test --verbose --features ssr
+        run: cargo test --verbose --workspace --features ssr
         working-directory: rec_temp
 
       - name: Cleanup

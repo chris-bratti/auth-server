@@ -1,5 +1,3 @@
-use crate::server::auth_functions::{encrypt_string, hash_string};
-
 use super::{
     db_helper::DbInstance,
     models::{AppAdmin, NewAppAdmin},
@@ -9,6 +7,7 @@ use super::{
 use chrono::{DateTime, Utc};
 use diesel::prelude::*;
 use diesel::select;
+use encryption_libs::{EncryptableString, HashableString};
 use schema::admins::dsl::*;
 
 impl DbInstance {
@@ -20,18 +19,12 @@ impl DbInstance {
     ) -> Result<(), DBError> {
         let mut connection = self.db_connection.connect()?;
 
-        let hashed_pass = hash_string(pass).await.unwrap();
-
-        let encrypted_email = encrypt_string(plaintext_email, crate::EncryptionKey::TwoFactorKey)
-            .await
-            .unwrap();
-
         let new_admin = NewAppAdmin {
-            username: uname,
-            email: &encrypted_email,
-            pass_hash: &hashed_pass,
-            initialized: &false,
-            locked: &false,
+            username: uname.clone(),
+            email: EncryptableString::from(plaintext_email),
+            pass_hash: HashableString::from(pass),
+            initialized: false,
+            locked: false,
         };
 
         diesel::insert_into(admins)
@@ -44,12 +37,11 @@ impl DbInstance {
     pub async fn initialize_admin(&self, uname: &String, tf_token: &String) -> Result<(), DBError> {
         let mut connection = self.db_connection.connect()?;
 
-        let encrypted_token = encrypt_string(tf_token, crate::EncryptionKey::TwoFactorKey)
-            .await
-            .unwrap();
-
         diesel::update(admins.filter(username.eq(uname)))
-            .set((two_factor_token.eq(encrypted_token), initialized.eq(true)))
+            .set((
+                two_factor_token.eq(EncryptableString::from(tf_token)),
+                initialized.eq(true),
+            ))
             .execute(&mut connection)?;
 
         Ok(())

@@ -6,10 +6,11 @@ use actix_session::SessionExt;
 use actix_web::{
     http::StatusCode, post, web, HttpMessage, HttpRequest, HttpResponse, Responder, Result,
 };
+use encryption_libs::{encrypt_log, EncryptableString, HashableString};
 use tokio::task;
 
 use crate::server::smtp::{generate_welcome_email_body, send_email};
-use crate::{db::db_helper::*, server::auth_functions::*, AuthError, EncryptionKey};
+use crate::{db::db_helper::*, server::auth_functions::*, AuthError};
 use crate::{AuthResponse, UserInfo};
 
 use super::smtp::generate_reset_email_body;
@@ -26,21 +27,17 @@ pub async fn handle_login<T>(
 where
     T: DatabaseUser,
 {
-    let encrypted_username: String = encrypt_string(&username, EncryptionKey::LoggerKey)
-        .await
-        .expect("Error encrypting username");
-
-    println!("Logging in user: {}", encrypted_username);
+    encrypt_log!("Logging in user: {}", username);
 
     if is_user_locked(&user).await? {
         return Err(AuthError::AccountLocked);
     }
 
     // Verify password hash with Argon2
-    let verified_result = verify_hash(&password, user.pass_hash());
+    let verified_result = user.pass_hash().verify(password);
 
     if verified_result.is_err() || !verified_result.unwrap() {
-        println!("Failed login attempt for {}", &encrypted_username);
+        encrypt_log!("Failed login attempt for {}", &username);
         let user_not_locked = user
             .increment_password_tries(&db_instance)
             .expect("Error marking login attempt as failed");
@@ -102,22 +99,16 @@ pub async fn handle_signup(
         Err(err) => return Err(AuthError::InternalServerError(err.to_string())),
     }
 
-    println!(
-        "Signing up user: {}",
-        encrypt_string(&username, EncryptionKey::LoggerKey)
-            .await
-            .expect("Error encrypting username")
-    );
+    encrypt_log!("Signing up user: {}", &username);
 
-    // Hash password
-    let pass_hash = hash_string(&password);
+    let email = EncryptableString::from(email);
 
     // Create user info to interact with DB
     let user_info = UserInfo {
         username: username.clone(),
         first_name: first_name.clone(),
         last_name,
-        pass_hash: pass_hash.await.expect("Error hashing password"),
+        pass_hash: HashableString::from(password),
         email: email.clone(),
     };
 
@@ -126,18 +117,13 @@ pub async fn handle_signup(
     // Generate random 32 bit verification token path
     let generated_token = generate_token();
 
-    // Hash token
-    let verification_token = hash_string(&generated_token)
-        .await
-        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
-
     let user = user
         .await
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
     // Save token hash to DB
     db_instance
-        .save_verification_token_to_db(&username, &verification_token)
+        .save_verification_token_to_db(&username, &generated_token)
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
     // Send verification email
@@ -150,7 +136,7 @@ pub async fn handle_signup(
         )
     });
 
-    println!("Saving user to session: {}", user.username);
+    encrypt_log!("Saving user to session: {}", &user.username);
     Identity::login(&request.extensions(), user.username.into()).unwrap();
 
     Ok(())
@@ -168,9 +154,9 @@ pub async fn handle_change_password(
     let pass_result = db_instance
         .get_pass_hash_for_username(&username)
         .await
-        .map_err(|err| AuthError::InternalServerError(err.to_string()));
+        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
-    let verified_result = verify_hash(&current_password, &pass_result?);
+    let verified_result = pass_result.verify(current_password);
 
     // Check supplied current password is valid
     if verified_result.is_err() || !verified_result.unwrap() {
@@ -187,21 +173,11 @@ pub async fn handle_change_password(
         return Err(AuthError::InvalidPassword);
     }
 
-    println!(
-        "Changing password for user: {}",
-        encrypt_string(&username, EncryptionKey::LoggerKey)
-            .await
-            .expect("Error encrypting username")
-    );
-
-    // Hash new password
-    let pass_hash = hash_string(&password)
-        .await
-        .expect("Error hashing password");
+    encrypt_log!("Changing password for user: {}", &username);
 
     // Store new password in database
     db_instance
-        .update_db_password(&username, &pass_hash)
+        .update_db_password(&username, &password)
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
     Ok(HttpResponse::Ok().json(AuthResponse::<()> {
@@ -220,7 +196,7 @@ pub async fn handle_reset_password(
 ) -> Result<(), AuthError> {
     println!("Requesting to reset password");
     // Verify reset token
-    let token_verification = verify_reset_token(&username, &reset_token, &db_instance)?;
+    let token_verification = verify_reset_token(&username, reset_token, &db_instance)?;
 
     // If token does not match or is no longer valid, return
     if !token_verification {
@@ -238,17 +214,12 @@ pub async fn handle_reset_password(
         return Err(AuthError::InvalidPassword);
     }
 
-    // Hash new password
-    let pass_hash = hash_string(&password)
-        .await
-        .expect("Error hashing password");
-
     let username_arc = Arc::new(username);
     let db_arc = Arc::new(db_instance);
 
     // Store new password in database
     db_arc
-        .update_db_password(&username_arc, &pass_hash)
+        .update_db_password(&username_arc, &password)
         .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
 
     {
@@ -296,14 +267,9 @@ pub async fn handle_request_password_reset(
     // Generate random 32 bit reset token path
     let generated_token = generate_token();
 
-    // Hash token
-    let reset_token = hash_string(&generated_token)
-        .await
-        .map_err(|_| AuthError::InternalServerError("Something went wrong".to_string()))?;
-
     // Save token hash to DB
     db_instance
-        .save_reset_token_to_db(&username, &reset_token)
+        .save_reset_token_to_db(&username, &generated_token)
         .map_err(|_| AuthError::InternalServerError("Something went wrong".to_string()))?;
 
     let user = db_instance
@@ -314,13 +280,9 @@ pub async fn handle_request_password_reset(
 
     let name = user.first_name;
 
-    let user_email = decrypt_string(&user.email, EncryptionKey::SmtpKey)
-        .await
-        .map_err(|err| AuthError::InternalServerError(err.to_string()))?;
-
     task::spawn_blocking(move || {
         send_email(
-            &user_email,
+            &user.email,
             "Reset Password".to_string(),
             generate_reset_email_body(&generated_token, &name),
             &name,
@@ -342,13 +304,14 @@ pub async fn handle_verify_user(
     println!("Attempting to verify user");
     // Verify reset token
     let token_verification =
-        verify_confirmation_token(&username, &verification_token, &db_instance)?;
+        verify_confirmation_token(&username, verification_token, &db_instance)?;
 
     // If token does not match or is no longer valid, return
     if !token_verification {
         return Err(AuthError::InvalidToken);
     }
 
+    // TODO: Combine these to one call
     db_instance
         .set_db_user_as_verified(&username)
         .map_err(|_| AuthError::InternalServerError("Something went wrong".to_string()))

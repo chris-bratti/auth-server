@@ -1,8 +1,13 @@
 #![allow(async_fn_in_trait)]
 use core::{fmt, str::FromStr};
+#[cfg(feature = "ssr")]
+use encryption_libs::EncryptableString;
+#[cfg(feature = "ssr")]
+use encryption_libs::HashableString;
 use leptos_router::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::fmt::Debug;
 
 pub mod client;
 pub mod controllers;
@@ -48,6 +53,27 @@ impl AdminTaskType {
                 "New OAuth application {} with ID {} requires approval",
                 &app_name, &client_id
             ),
+        }
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub enum HtmlError {
+    Forbidden,
+}
+
+impl fmt::Display for HtmlError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            HtmlError::Forbidden => write!(f, "Client not allowed to access this resource"),
+        }
+    }
+}
+
+impl fmt::Debug for HtmlError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Forbidden => write!(f, "Client not allowed to access this resource"),
         }
     }
 }
@@ -155,15 +181,8 @@ impl FromStr for AuthError {
     }
 }
 
-pub enum EncryptionKey {
-    SmtpKey,
-    TwoFactorKey,
-    LoggerKey,
-    OauthKey,
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
-pub struct User {
+#[derive(Debug, Deserialize, Serialize)]
+pub struct OauthUserInfo {
     first_name: String,
     last_name: String,
     username: String,
@@ -172,6 +191,40 @@ pub struct User {
     email: String,
 }
 
+#[cfg(feature = "ssr")]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
+pub struct User {
+    first_name: String,
+    last_name: String,
+    username: String,
+    two_factor: bool,
+    verified: bool,
+    email: EncryptableString,
+}
+
+#[cfg(feature = "ssr")]
+impl From<User> for OauthUserInfo {
+    fn from(value: User) -> Self {
+        let User {
+            first_name,
+            last_name,
+            username,
+            two_factor,
+            verified,
+            email,
+        } = value.into();
+        OauthUserInfo {
+            first_name,
+            last_name,
+            username,
+            two_factor,
+            verified,
+            email: email.get_decrypted().to_string(),
+        }
+    }
+}
+
+#[cfg(feature = "ssr")]
 impl From<User> for UserBasicInfo {
     fn from(user: User) -> Self {
         UserBasicInfo {
@@ -209,45 +262,14 @@ impl GrantType {
     }
 }
 
-pub enum AuthType {
-    Login,
-    Signup,
-    VerifyUser,
-    ResetPassword,
-    RequestPasswordReset,
-    ChangePassword,
-    VerifyOtp,
-    Generate2Fa,
-    Enable2Fa,
-    Logout,
-    Invalid,
-}
-
-impl AuthType {
-    pub fn from(req_type: &str) -> AuthType {
-        match req_type {
-            "login" => AuthType::Login,
-            "signup" => AuthType::Signup,
-            "verify_user" => AuthType::VerifyUser,
-            "reset_password" => AuthType::ResetPassword,
-            "request_password_reset" => AuthType::RequestPasswordReset,
-            "change_password" => AuthType::ChangePassword,
-            "verify_otp" => AuthType::VerifyOtp,
-            "generate_2fa" => AuthType::Generate2Fa,
-            "enable_2fa" => AuthType::Enable2Fa,
-            "logout" => AuthType::Logout,
-            _ => AuthType::Invalid,
-        }
-    }
-}
-
+#[cfg(feature = "ssr")]
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct UserInfo {
     pub username: String,
     pub first_name: String,
     pub last_name: String,
-    pub email: String,
-    pub pass_hash: String,
+    pub email: EncryptableString,
+    pub pass_hash: HashableString,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -340,6 +362,6 @@ pub struct RefreshTokenResponse {
 #[derive(Serialize)]
 pub struct UserInfoResponse {
     pub success: bool,
-    pub user_data: User,
+    pub user_data: OauthUserInfo,
     pub timestamp: i64,
 }
