@@ -355,6 +355,7 @@ pub struct AuthorizationCodeResponse {
 pub struct RefreshTokenResponse {
     pub success: bool,
     pub access_token: String,
+    pub refresh_token: String,
     pub username: String,
     pub expiry: i64,
 }
