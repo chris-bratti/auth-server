@@ -103,6 +103,7 @@ pub async fn handle_refresh_token(
     Ok(HttpResponse::Ok().json(RefreshTokenResponse {
         success: true,
         access_token,
+        refresh_token: refresh_token.clone(),
         username,
         expiry,
     }))

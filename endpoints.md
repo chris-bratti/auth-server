@@ -84,6 +84,7 @@ Response
 {
     "success": true,
     "access_token": "JWT-access-token",
+    "refresh_token": "refresh-token",
     "username": "user",
     "expiry": 1734285694
 }
