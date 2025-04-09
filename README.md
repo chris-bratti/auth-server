@@ -135,6 +135,10 @@ $ cargo run --release
 
 The server will start on port 8080 and will only be reachable via HTTPS
 
+## Example Client
+
+This project is currently being used by my [website](https://github.com/chris-bratti/chrisbratti-website) as a centralize authentication system. Check it out to see the app in action and an example of integrating an OAuth client!
+
 ## Contributions
 
 **This repo is open to contributions** - feel free to open a PR for any changes, updates, or refactors as you see fit. I am *quite* open to feedback on this project - if you have some good ideas I would love to see them :)
