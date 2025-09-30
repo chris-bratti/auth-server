@@ -21,6 +21,11 @@
 - User-only pages - ensure only authenticated users can access sensitive pages
 - HTTPS
 
+### Admin pages
+- Support for securely creating and maintaining server admins
+- Admin-only pages that populate administrative tasks
+- Allows approving / denying newly registered OAuth clients through the UI
+
 ### User friendly
 - Easy to navigate UI built with Leptos
 - Simple and fast two factor authentication enrollment with QR code based secrets
